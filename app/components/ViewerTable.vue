@@ -41,6 +41,19 @@ function onSelect(index: number): void {
 /** Altura estimada de cada linha, em px (usada pela virtualização). */
 const ROW_HEIGHT = 40
 
+/** Largura fixa de cada coluna, em px (deve casar com `--col-w` no CSS). */
+const COL_WIDTH = 180
+
+/**
+ * Largura definida da grade = nº de colunas × largura da coluna.
+ *
+ * Precisa ser um valor *definido* (não `max-content`): com `table-layout: fixed`
+ * o navegador só respeita as larguras fixas das colunas se a tabela tiver largura
+ * definida. Com `max-content`, ele cai no layout automático e uma célula de texto
+ * longo expande a coluna, desalinhando as linhas.
+ */
+const gridWidth = computed(() => `${props.columns.length * COL_WIDTH}px`)
+
 const scroller = ref<HTMLElement | null>(null)
 
 const rowVirtualizer = useVirtualizer(
@@ -65,7 +78,7 @@ const isEmpty = computed(() => props.rows.length === 0)
   <div ref="scroller" class="viewer-table" role="region" aria-label="Tabela de dados">
     <table class="viewer-table__grid">
       <thead class="viewer-table__head">
-        <tr class="viewer-table__row">
+        <tr class="viewer-table__row" :style="{ width: gridWidth }">
           <th
             v-for="column in columns"
             :key="column.index"
@@ -97,7 +110,7 @@ const isEmpty = computed(() => props.rows.length === 0)
           v-for="virtualRow in virtualRows"
           :key="virtualRow.key"
           class="viewer-table__row"
-          :style="{ transform: `translateY(${virtualRow.start}px)` }"
+          :style="{ width: gridWidth, transform: `translateY(${virtualRow.start}px)` }"
         >
           <CsvCell
             v-for="column in columns"
@@ -146,13 +159,15 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 /* Cabeçalho e linhas são tabelas de largura fixa, para alinhar as colunas.
-   `max-content` deixa a grade crescer além do container (scroll horizontal para
-   datasets largos, ex.: 70 colunas); `min-width: 100%` evita encolher quando há
-   poucas colunas. */
+   A largura é *definida* via style inline (nº de colunas × --col-w) — condição
+   para o `table-layout: fixed` respeitar as larguras das colunas e truncar texto
+   longo (com `max-content`/`auto` o navegador cai no layout automático e uma
+   célula longa expande a coluna, desalinhando as linhas). A grade pode crescer
+   além do container (scroll horizontal, ex.: 70 colunas); `min-width: 100%`
+   evita encolher quando há poucas colunas. */
 .viewer-table__head .viewer-table__row,
 .viewer-table__body .viewer-table__row {
   display: table;
-  width: max-content;
   min-width: 100%;
   table-layout: fixed;
 }
