@@ -15,12 +15,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@tanstack/vue-virtual": "^3.13.32",
+    "idb": "^8.0.3",
     "nuxt": "^4.4.8",
+    "papaparse": "^5.5.4",
     "vue": "^3.5.39",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",
+    "@types/papaparse": "^5.5.2",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
     "happy-dom": "^20.10.6",

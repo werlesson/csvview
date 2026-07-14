@@ -31,20 +31,20 @@ concluí-la, todas as 7 user stories estão entregues.
 
 ### Phase 1.1: Configuração e dependências
 
-- [ ] **Task:** Configurar a aplicação como SPA estática — `ssr: false` no `nuxt.config.ts` e preset estático do Nitro, de forma que `nuxt generate` produza um SPA sem servidor.
+- [x] **Task:** Configurar a aplicação como SPA estática — `ssr: false` no `nuxt.config.ts` e preset estático do Nitro, de forma que `nuxt generate` produza um SPA sem servidor.
   - **Acceptance criteria:**
     - `yarn generate` conclui e produz saída estática servível por um CDN/host estático.
     - APIs de navegador (File, IndexedDB, Web Worker) funcionam sem erro de SSR.
     - Nenhuma rota de servidor/Nitro é adicionada.
   - **Traces:** project-description Tech Stack; workflow de deploy (SSG)
 
-- [ ] **Task:** Adicionar as dependências de runtime: `papaparse` (+ `@types/papaparse`), `@tanstack/vue-virtual` e um wrapper de IndexedDB (`idb`), via `yarn`.
+- [x] **Task:** Adicionar as dependências de runtime: `papaparse` (+ `@types/papaparse`), `@tanstack/vue-virtual` e um wrapper de IndexedDB (`idb`), via `yarn`.
   - **Acceptance criteria:**
     - Pacotes instalados com `yarn` e registrados em `package.json` (sem uso de npm/pnpm).
     - `yarn build` e `yarn test` continuam passando após a instalação.
   - **Traces:** decisões de parser/virtualização/persistência
 
-- [ ] **Task:** Remover o scaffold de boas-vindas: substituir `app/app.vue` (`NuxtWelcome`) por um shell com `NuxtLayout` + `NuxtPage` e habilitar o diretório de páginas.
+- [x] **Task:** Remover o scaffold de boas-vindas: substituir `app/app.vue` (`NuxtWelcome`) por um shell com `NuxtLayout` + `NuxtPage` e habilitar o diretório de páginas.
   - **Acceptance criteria:**
     - `app/app.vue` não referencia mais `NuxtWelcome`.
     - A rota `/` renderiza a página de Upload (placeholder até a Fase 6) via `NuxtPage`.
@@ -52,21 +52,21 @@ concluí-la, todas as 7 user stories estão entregues.
 
 ### Phase 1.2: Tokens de design e tipografia
 
-- [ ] **Task:** Definir os tokens de design como variáveis CSS (cores, radii) para os temas light e dark em `app/assets/css/main.css`, fiéis ao design system.
+- [x] **Task:** Definir os tokens de design como variáveis CSS (cores, radii) para os temas light e dark em `app/assets/css/main.css`, fiéis ao design system.
   - **Acceptance criteria:**
     - Todas as variáveis de cor de `README.md#design-tokens` existem para light e dark (bg, bg-1/2, border(-strong), text/2/3, accent(-hover/-soft/-fg), success/warning/error/info + `-soft`, shadow).
     - Os valores batem exatamente com a tabela do design.
   - **Design ref:** `.spec/init/design/README.md#design-tokens`
   - **Traces:** design system; schema `settings` (tema)
 
-- [ ] **Task:** Auto-hospedar as fontes Geist (sans) e Geist Mono (mono), sem depender de CDN externo (privacidade/offline).
+- [x] **Task:** Auto-hospedar as fontes Geist (sans) e Geist Mono (mono), sem depender de CDN externo (privacidade/offline).
   - **Acceptance criteria:**
     - As fontes carregam de assets locais; nenhuma requisição a host externo.
     - `--font` mapeia para Geist e `--mono` para Geist Mono.
   - **Design ref:** `.spec/init/design/README.md#tipografia`
   - **Traces:** design system; princípio client-side
 
-- [ ] **Task:** Aplicar o tema via atributo `data-theme` no elemento raiz, com **dark** como padrão, lendo/escrevendo a preferência (integra com a Fase 3).
+- [x] **Task:** Aplicar o tema via atributo `data-theme` no elemento raiz, com **dark** como padrão, lendo/escrevendo a preferência (integra com a Fase 3).
   - **Acceptance criteria:**
     - Sem preferência salva, o tema inicial é dark.
     - Alternar o tema troca as variáveis CSS aplicadas em toda a UI.
@@ -74,14 +74,14 @@ concluí-la, todas as 7 user stories estão entregues.
 
 ### Phase 1.3: Layout e estado compartilhado
 
-- [ ] **Task:** Criar o layout base com header (marca `csvview.app`, selo "100% no navegador" e toggle de tema) e área de conteúdo.
+- [x] **Task:** Criar o layout base com header (marca `csvview.app`, selo "100% no navegador" e toggle de tema) e área de conteúdo.
   - **Acceptance criteria:**
     - O header aparece em todas as telas e é responsivo.
     - O toggle de tema está presente e funcional no header.
   - **Design ref:** `.spec/init/design/README.md` (header / Produto)
   - **Traces:** design system
 
-- [ ] **Task:** Criar um composable de estado do dataset atual (`useCurrentDataset`) compartilhado entre Upload e Viewer (dataset parseado + metadados em memória).
+- [x] **Task:** Criar um composable de estado do dataset atual (`useCurrentDataset`) compartilhado entre Upload e Viewer (dataset parseado + metadados em memória).
   - **Acceptance criteria:**
     - O composable expõe o dataset atual, seus metadados e uma ação para defini-lo/limpá-lo.
     - Navegar do Upload para o Viewer preserva o dataset carregado sem re-parsear.
