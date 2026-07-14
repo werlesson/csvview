@@ -7,16 +7,15 @@ import type { ViewerColumn } from '~/composables/useViewer'
 /**
  * Toolbar do **Viewer** (Fase 7, US-2.1).
  *
- * Fiel à tela de referência: nome do arquivo, contador de linhas, campo de
- * busca "Buscar em tudo…" e seletor de colunas (mostrar/ocultar). Os controles
+ * Fiel à tela de referência (Screen 2): à esquerda o campo de busca
+ * "Buscar em tudo…" e o seletor de colunas; à direita, o contador de linhas.
+ * O nome do arquivo fica na barra de título (header do layout). Os controles
  * de features adiadas (Filtros, Exportar) ficam **fora do escopo do MVP** e não
  * são renderizados aqui.
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
 defineProps<{
-  /** Nome do arquivo carregado. */
-  fileName: string
   /** Total de linhas do dataset (sem filtro). */
   rowCount: number
   /** Colunas do dataset, com tipo e visibilidade atual. */
@@ -41,11 +40,6 @@ function onToggle(index: number): void {
 
 <template>
   <div class="toolbar">
-    <div class="toolbar__file">
-      <span class="toolbar__name">{{ fileName }}</span>
-      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
-    </div>
-
     <div class="toolbar__controls">
       <div class="toolbar__search">
         <SearchInput
@@ -57,6 +51,18 @@ function onToggle(index: number): void {
 
       <Dropdown label="Colunas">
         <template #trigger>
+          <svg
+            class="toolbar__icon"
+            viewBox="0 0 16 16"
+            width="15"
+            height="15"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+            <line x1="6.5" y1="2.5" x2="6.5" y2="13.5" stroke="currentColor" stroke-width="1.3" />
+            <line x1="10" y1="2.5" x2="10" y2="13.5" stroke="currentColor" stroke-width="1.3" />
+          </svg>
           <span>Colunas</span>
         </template>
         <ul class="columns-menu" role="none">
@@ -75,6 +81,10 @@ function onToggle(index: number): void {
         </ul>
       </Dropdown>
     </div>
+
+    <div class="toolbar__meta">
+      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
+    </div>
   </div>
 </template>
 
@@ -90,39 +100,35 @@ function onToggle(index: number): void {
   border-radius: var(--radius);
 }
 
-.toolbar__file {
+.toolbar__controls {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.toolbar__search {
+  flex: 0 1 360px;
   min-width: 0;
 }
 
-.toolbar__name {
-  font-family: var(--mono);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.toolbar__meta {
+  flex: none;
+  display: flex;
+  align-items: center;
 }
 
 .toolbar__count {
-  flex: none;
+  font-family: var(--mono);
   font-size: 13px;
   color: var(--text-3);
   white-space: nowrap;
 }
 
-.toolbar__controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.toolbar__search {
-  width: 280px;
-  max-width: 40vw;
+.toolbar__icon {
+  flex: none;
+  color: var(--text-2);
 }
 
 .columns-menu {
@@ -178,8 +184,11 @@ function onToggle(index: number): void {
   }
 
   .toolbar__search {
-    width: 100%;
-    max-width: none;
+    flex: 1 1 auto;
+  }
+
+  .toolbar__meta {
+    justify-content: flex-end;
   }
 }
 </style>

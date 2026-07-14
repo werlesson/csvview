@@ -43,47 +43,70 @@ async function onReopen(id: number): Promise<void> {
 
 <template>
   <section class="upload">
-    <header class="upload__hero">
-      <h1 class="upload__title">Solte um CSV e comece a explorar.</h1>
-      <p class="upload__seal">
-        <span class="upload__seal-dot" aria-hidden="true" />
-        100% no navegador · seus dados não saem daqui
+    <div class="upload__main">
+      <header class="upload__hero">
+        <p class="upload__seal">
+          <span class="upload__seal-dot" aria-hidden="true" />
+          100% no navegador · seus dados não saem daqui
+        </p>
+        <h1 class="upload__title">Solte um CSV e comece a explorar.</h1>
+        <p class="upload__subtitle">
+          Arraste um arquivo ou abra uma sessão recente. Tudo é processado
+          localmente, no seu navegador.
+        </p>
+      </header>
+
+      <Dropzone :disabled="isOpening" @select="onSelect" />
+
+      <p v-if="error" class="upload__error" role="alert">
+        {{ error }}
       </p>
-    </header>
+    </div>
 
-    <Dropzone :disabled="isOpening" @select="onSelect" />
-
-    <p v-if="error" class="upload__error" role="alert">
-      {{ error }}
-    </p>
-
-    <RecentFiles :files="recents" @open="onReopen" />
+    <RecentFiles class="upload__recents" :files="recents" @open="onReopen" />
   </section>
 </template>
 
 <style scoped>
+/* Layout de duas colunas fiel ao design: à esquerda o hero + dropzone,
+   à direita os arquivos recentes. Em telas estreitas, empilha. */
 .upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 44px;
+  align-items: start;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.upload__main {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 32px 0;
 }
 
 .upload__hero {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
+  align-items: flex-start;
+  gap: 16px;
+  text-align: left;
 }
 
 .upload__title {
-  font-size: 34px;
+  font-size: 44px;
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   color: var(--text);
+}
+
+.upload__subtitle {
+  max-width: 44ch;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text-2);
 }
 
 .upload__seal {
@@ -91,10 +114,11 @@ async function onReopen(id: number): Promise<void> {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--text-2);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  padding: 4px 12px;
+  padding: 5px 12px;
 }
 
 .upload__seal-dot {
@@ -111,5 +135,19 @@ async function onReopen(id: number): Promise<void> {
   background: var(--error-soft);
   border: 1px solid var(--error);
   border-radius: var(--radius);
+}
+
+/* Empilha em telas estreitas: hero+dropzone e recentes um sobre o outro. */
+@media (max-width: 900px) {
+  .upload {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+    max-width: 640px;
+    padding: 24px 0;
+  }
+
+  .upload__title {
+    font-size: 34px;
+  }
 }
 </style>

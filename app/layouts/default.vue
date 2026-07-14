@@ -1,18 +1,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useCurrentDataset } from '~/composables/useCurrentDataset'
 
 // Toggle de tema inline (a Fase 2 formaliza um componente ThemeToggle
 // dedicado; aqui garantimos um controle presente e funcional no header).
 const { theme, toggleTheme } = useTheme()
 
 const isDark = computed(() => theme.value === 'dark')
+
+// Na barra de título, exibimos o nome do arquivo quando estamos no Viewer
+// (fiel ao design da Screen 2); nas demais rotas, a marca do produto.
+const route = useRoute()
+const { meta } = useCurrentDataset()
+const currentFile = computed(() =>
+  route.path === '/viewer' ? (meta.value?.name ?? null) : null,
+)
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
       <div class="app-header__inner">
-        <a class="brand" href="/">
+        <a v-if="currentFile" class="brand" href="/" :title="`${currentFile} — voltar ao início`">
+          <span class="brand__file">{{ currentFile }}</span>
+        </a>
+        <a v-else class="brand" href="/">
           <span class="brand__mark">csvview.app</span>
           <span class="brand__badge">100% no navegador</span>
         </a>
@@ -75,6 +87,14 @@ const isDark = computed(() => theme.value === 'dark')
   font-family: var(--mono);
   font-weight: 600;
   font-size: 15px;
+}
+
+/* Nome do arquivo na barra de título (Viewer). */
+.brand__file {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
 }
 
 .brand__badge {

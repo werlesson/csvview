@@ -117,6 +117,7 @@ const isEmpty = computed(() => props.rows.length === 0)
             :key="column.index"
             :value="rows[virtualRow.index]?.[column.index]"
             :numeric="column.type === 'number'"
+            :selected="column.index === selectedIndex"
           />
         </tr>
       </tbody>
@@ -188,9 +189,11 @@ const isEmpty = computed(() => props.rows.length === 0)
   padding: 10px 12px;
   text-align: left;
   font-family: var(--font);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-2);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
@@ -207,6 +210,15 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table__th--selected {
   background: var(--accent-soft);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.viewer-table__th--selected .viewer-table__th-label {
+  color: var(--accent);
+}
+
+/* Hover de linha: realça a linha inteira sob o cursor (fiel ao design). */
+.viewer-table__body .viewer-table__row:hover :deep(.csv-cell) {
+  background: var(--bg-hover);
 }
 
 .viewer-table__th-button {
@@ -228,14 +240,22 @@ const isEmpty = computed(() => props.rows.length === 0)
 
 .viewer-table__th-label {
   display: block;
+  color: var(--text-2);
 }
 
+/* O tipo da coluna não aparece no cabeçalho (fiel ao design da Screen 2): fica
+   só no leitor de tela / DOM. O tipo é exibido no painel de estatísticas ao
+   selecionar a coluna. */
 .viewer-table__th-type {
-  display: block;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--text-3);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .viewer-table__empty {

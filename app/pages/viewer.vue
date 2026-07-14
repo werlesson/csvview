@@ -17,7 +17,7 @@ import { useViewer } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
-const { dataset, meta, hasDataset } = useCurrentDataset()
+const { dataset, hasDataset } = useCurrentDataset()
 
 // Acesso direto ao Viewer sem um dataset carregado → volta ao Upload.
 if (!hasDataset.value) {
@@ -37,7 +37,6 @@ const {
   selectColumn,
 } = useViewer(() => dataset.value)
 
-const fileName = computed(() => meta.value?.name ?? '')
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 </script>
 
@@ -45,7 +44,6 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
   <section v-if="hasDataset" class="viewer">
     <ViewerToolbar
       v-model:search="search"
-      :file-name="fileName"
       :row-count="totalRows"
       :columns="columns"
       @toggle-column="toggleColumn"
