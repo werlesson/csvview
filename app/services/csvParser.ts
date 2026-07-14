@@ -81,6 +81,15 @@ function extensionOf(fileName: string): string {
   return fileName.slice(dot).toLowerCase()
 }
 
+/**
+ * Remove o BOM (U+FEFF) do início do conteúdo, se presente. Exportadores
+ * (Excel, sistemas legados) costumam prefixar UTF-8 com BOM, o que grudaria o
+ * caractere invisível no primeiro rótulo do cabeçalho (ex.: `﻿id_asset`).
+ */
+function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
 /** Conta ocorrências de um caractere numa string. */
 function countChar(text: string, char: string): number {
   let count = 0
@@ -90,29 +99,31 @@ function countChar(text: string, char: string): number {
   return count
 }
 
-/**
- * Detecta o delimitador a partir do conteúdo, contando os candidatos nas
- * primeiras linhas não-vazias. Empate ou ausência total resolve para `comma`.
- */
-export function detectDelimiterFromContent(content: string): Delimiter {
-  const sample = content.slice(0, 64 * 1024)
-  const lines = sample
-    .split(/\r\n|\r|\n/)
-    .filter((line) => line.trim() !== '')
-    .slice(0, 5)
-  const joined = lines.join('\n')
-
-  const counts: Record<Delimiter, number> = {
-    comma: countChar(joined, DELIMITER_CHARS.comma),
-    tab: countChar(joined, DELIMITER_CHARS.tab),
-    semicolon: countChar(joined, DELIMITER_CHARS.semicolon),
+/** Conta cada delimitador candidato num trecho de texto. */
+function countDelimiters(text: string): Record<Delimiter, number> {
+  return {
+    comma: countChar(text, DELIMITER_CHARS.comma),
+    tab: countChar(text, DELIMITER_CHARS.tab),
+    semicolon: countChar(text, DELIMITER_CHARS.semicolon),
   }
+}
 
-  // Preferência estável em caso de empate: comma > tab > semicolon.
-  const order: Delimiter[] = ['comma', 'tab', 'semicolon']
-  let best: Delimiter = 'comma'
-  let bestCount = -1
+/**
+ * Escolhe o delimitador de maior contagem. Empates são resolvidos por uma ordem
+ * de preferência que começa pela `hint` (a extensão do arquivo, quando
+ * conhecida) e segue comma > tab > semicolon. Retorna `null` se nenhum
+ * candidato aparecer.
+ */
+function pickByCounts(
+  counts: Record<Delimiter, number>,
+  hint?: Delimiter,
+): Delimiter | null {
+  const base: Delimiter[] = ['comma', 'tab', 'semicolon']
+  const order = hint ? [hint, ...base.filter((d) => d !== hint)] : base
+  let best: Delimiter | null = null
+  let bestCount = 0
   for (const candidate of order) {
+    // `>` estrito + ordem iniciando pela hint => empate fica com a hint.
     if (counts[candidate] > bestCount) {
       best = candidate
       bestCount = counts[candidate]
@@ -121,20 +132,59 @@ export function detectDelimiterFromContent(content: string): Delimiter {
   return best
 }
 
+/** Primeiras `max` linhas não-vazias da amostra (BOM já removido). */
+function sampleLines(content: string, max: number): string[] {
+  return stripBom(content)
+    .slice(0, 64 * 1024)
+    .split(/\r\n|\r|\n/)
+    .filter((line) => line.trim() !== '')
+    .slice(0, max)
+}
+
 /**
- * Detecta o delimitador por **extensão** e, quando ambígua, por **conteúdo**:
- * `.csv` → comma, `.tsv` → tab, `.txt`/variantes → detecção pelo conteúdo
- * (ex.: `;` → semicolon). Sem extensão nem conteúdo, assume `comma`.
+ * Detecta o delimitador a partir do conteúdo. A **linha de cabeçalho** decide
+ * primeiro — ela raramente contém o delimitador dentro de valores entre aspas,
+ * então é o sinal mais limpo (evita que vírgulas de decimais/valores citados,
+ * ex.: `"353.097,00"`, mascarem um arquivo `;`). Só se o cabeçalho não tiver
+ * nenhum candidato é que a amostra inteira decide. Empate/ausência → `hint`.
+ */
+function detectFromContent(content: string, hint?: Delimiter): Delimiter {
+  const lines = sampleLines(content, 5)
+  const header = lines[0]
+  if (header) {
+    const byHeader = pickByCounts(countDelimiters(header), hint)
+    if (byHeader) return byHeader
+  }
+  const bySample = pickByCounts(countDelimiters(lines.join('\n')), hint)
+  return bySample ?? hint ?? 'comma'
+}
+
+/**
+ * Detecta o delimitador a partir do conteúdo, priorizando a linha de cabeçalho.
+ * Empate ou ausência total resolve para `comma`.
+ */
+export function detectDelimiterFromContent(content: string): Delimiter {
+  return detectFromContent(content)
+}
+
+/**
+ * Detecta o delimitador combinando **extensão** e **conteúdo**: `.csv` → comma,
+ * `.tsv` → tab, `.txt`/variantes → detecção pelo conteúdo (ex.: `;` →
+ * semicolon).
+ *
+ * A extensão é apenas um **desempate**: o conteúdo (linha de cabeçalho) manda.
+ * Assim um `.csv` exportado com `;` — padrão pt-BR — não é parseado como uma
+ * coluna só. Sem conteúdo, assume o delimitador da extensão.
  */
 export function detectDelimiter(fileName: string, content?: string): Delimiter {
   const ext = extensionOf(fileName)
-  if (ext === '.csv') return 'comma'
-  if (ext === '.tsv') return 'tab'
-  // `.txt` e demais: decide pelo conteúdo.
-  if (content !== undefined && content !== '') {
-    return detectDelimiterFromContent(content)
-  }
-  return 'comma'
+  const hint: Delimiter | undefined =
+    ext === '.csv' ? 'comma' : ext === '.tsv' ? 'tab' : undefined
+
+  const sample = content !== undefined ? stripBom(content) : ''
+  if (sample.trim() === '') return hint ?? 'comma'
+
+  return detectFromContent(sample, hint)
 }
 
 /**
@@ -160,9 +210,12 @@ function normalizeRow(row: string[], columnCount: number): string[] {
  * quando o parser falha.
  */
 export function parseCsv(
-  content: string,
+  rawContent: string,
   options: ParseOptions = {},
 ): Promise<ParseResult> {
+  // Remove o BOM antes de qualquer coisa, senão ele grudaria no 1º rótulo do
+  // cabeçalho e distorceria a detecção de delimitador.
+  const content = stripBom(rawContent)
   const delimiter =
     options.delimiter ?? detectDelimiter(options.fileName ?? '', content)
   const delimiterChar = DELIMITER_CHARS[delimiter]

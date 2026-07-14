@@ -36,6 +36,24 @@ describe('motor de parsing CSV/TSV', () => {
       ])
       expect(result.delimiter).toBe('tab')
     })
+
+    it('`.csv` com BOM e delimitador `;` (export pt-BR) vira colunas certas', async () => {
+      // Regressão: arquivo real de exportador BR — extensão `.csv`, BOM UTF-8 e
+      // `;` como separador. Antes virava uma única coluna com `﻿id` no header.
+      const content = '﻿id;nome;placa\n1;Ana;ABC1D23\n2;Bruno;XYZ9K88'
+
+      const result = await parseCsv(content, {
+        fileName: 'exportador_estadias.csv',
+      })
+
+      expect(result.delimiter).toBe('semicolon')
+      expect(result.header).toEqual(['id', 'nome', 'placa'])
+      expect(result.column_count).toBe(3)
+      expect(result.rows).toEqual([
+        ['1', 'Ana', 'ABC1D23'],
+        ['2', 'Bruno', 'XYZ9K88'],
+      ])
+    })
   })
 
   describe('parse-quoted', () => {
@@ -144,9 +162,17 @@ describe('motor de parsing CSV/TSV', () => {
       expect(detectDelimiter('people.tsv')).toBe('tab')
     })
 
-    it('a extensão tem prioridade sobre o conteúdo', () => {
-      // Conteúdo com `;`, mas extensão `.csv` → comma (AC estrita).
-      expect(detectDelimiter('data.csv', 'a;b;c\n1;2;3')).toBe('comma')
+    it('a extensão tem prioridade quando o seu delimitador aparece', () => {
+      // `.csv` com vírgulas presentes → comma, mesmo havendo `;` em valores.
+      expect(detectDelimiter('data.csv', 'a,b;x,c\n1,2,3')).toBe('comma')
+    })
+
+    it('`.csv` exportado com `;` (sem vírgulas) → semicolon', () => {
+      // Caso real pt-BR: extensão `.csv` mas delimitador `;`. A extensão não
+      // pode forçar comma, senão o arquivo vira uma coluna só.
+      expect(detectDelimiter('exportador.csv', 'id;nome;placa\n1;Ana;ABC1D23')).toBe(
+        'semicolon',
+      )
     })
   })
 
