@@ -19,4 +19,12 @@ describe('CsvCell', () => {
     const wrapper = mount(CsvCell, { props: { value: 42 } })
     expect(wrapper.text()).toBe('42')
   })
+
+  it('aligns numeric columns right in a monospace class', () => {
+    const numeric = mount(CsvCell, { props: { value: '42', numeric: true } })
+    expect(numeric.classes()).toContain('csv-cell--numeric')
+
+    const text = mount(CsvCell, { props: { value: 'hello' } })
+    expect(text.classes()).not.toContain('csv-cell--numeric')
+  })
 })
