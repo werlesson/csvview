@@ -42,6 +42,8 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   const search = ref('')
   /** Índices das colunas ocultas pelo seletor de colunas (US-2.3). */
   const hidden = ref<Set<number>>(new Set())
+  /** Índice da coluna selecionada para o painel de estatísticas (US-3.1). */
+  const selectedIndex = ref<number | null>(null)
 
   const dataset = computed<Dataset>(() => toValue(source) ?? EMPTY_DATASET)
 
@@ -130,6 +132,35 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     search.value = ''
   }
 
+  /**
+   * A coluna atualmente selecionada (para o painel de estatísticas), ou `null`
+   * quando nenhuma está selecionada ou o índice caiu fora do dataset atual
+   * (ex.: dataset trocado). Independe da visibilidade da coluna.
+   */
+  const selectedColumn = computed<ViewerColumn | null>(() => {
+    const index = selectedIndex.value
+    if (index === null) return null
+    return columns.value[index] ?? null
+  })
+
+  /**
+   * Estatísticas (Fase 5) da coluna selecionada, ou `null` quando não há
+   * seleção. Trocar a seleção atualiza este valor — é o que alimenta o painel.
+   */
+  const selectedStats = computed<ColumnStats | null>(() => {
+    const index = selectedIndex.value
+    if (index === null) return null
+    return columnStats.value[index] ?? null
+  })
+
+  /**
+   * Seleciona uma coluna (por índice) para o painel de estatísticas; `null`
+   * limpa a seleção e fecha o painel (US-3.1).
+   */
+  function selectColumn(index: number | null): void {
+    selectedIndex.value = index
+  }
+
   return {
     search,
     columns,
@@ -141,9 +172,13 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     visibleRowCount,
     isSearching,
     noResults,
+    selectedIndex,
+    selectedColumn,
+    selectedStats,
     toggleColumn,
     hideColumn,
     showColumn,
     clearSearch,
+    selectColumn,
   }
 }

@@ -76,4 +76,27 @@ describe('ViewerTable', () => {
     expect(wrapper.find('.viewer-table__empty').exists()).toBe(false)
     expect(wrapper.find('.viewer-table__body').exists()).toBe(true)
   })
+
+  // stats-select-column → clicar no cabeçalho seleciona a coluna
+  it('stats-select-column: clicar no cabeçalho emite select-column com o índice', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    // Clica no cabeçalho da terceira coluna (index 2, "amount").
+    await wrapper.findAll('.viewer-table__th-button')[2]!.trigger('click')
+
+    expect(wrapper.emitted('select-column')).toEqual([[2]])
+  })
+
+  it('marca o cabeçalho da coluna selecionada', () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS, selectedIndex: 2 },
+    })
+
+    const headers = wrapper.findAll('.viewer-table__th')
+    expect(headers[0]!.classes()).not.toContain('viewer-table__th--selected')
+    expect(headers[2]!.classes()).toContain('viewer-table__th--selected')
+    expect(headers[2]!.attributes('aria-selected')).toBe('true')
+  })
 })

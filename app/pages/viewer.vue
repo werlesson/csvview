@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ViewerToolbar from '~/components/ViewerToolbar.vue'
 import ViewerTable from '~/components/ViewerTable.vue'
+import StatsPanel from '~/components/StatsPanel.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
 
@@ -30,9 +31,14 @@ const {
   filteredRows,
   totalRows,
   toggleColumn,
+  selectedIndex,
+  selectedColumn,
+  selectedStats,
+  selectColumn,
 } = useViewer(() => dataset.value)
 
 const fileName = computed(() => meta.value?.name ?? '')
+const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 </script>
 
 <template>
@@ -45,7 +51,16 @@ const fileName = computed(() => meta.value?.name ?? '')
       @toggle-column="toggleColumn"
     />
 
-    <ViewerTable :columns="visibleColumns" :rows="filteredRows" />
+    <div class="viewer__body">
+      <ViewerTable
+        :columns="visibleColumns"
+        :rows="filteredRows"
+        :selected-index="selectedIndex"
+        @select-column="selectColumn"
+      />
+
+      <StatsPanel :label="selectedLabel" :stats="selectedStats" />
+    </div>
   </section>
 </template>
 
@@ -54,5 +69,18 @@ const fileName = computed(() => meta.value?.name ?? '')
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.viewer__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .viewer__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

@@ -17,12 +17,26 @@ import type { ViewerColumn } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
-const props = defineProps<{
-  /** Colunas visíveis, na ordem do cabeçalho (cada uma com seu índice original). */
-  columns: ViewerColumn[]
-  /** Linhas já filtradas pela busca; cada linha é o array completo de células. */
-  rows: string[][]
+const props = withDefaults(
+  defineProps<{
+    /** Colunas visíveis, na ordem do cabeçalho (cada uma com seu índice original). */
+    columns: ViewerColumn[]
+    /** Linhas já filtradas pela busca; cada linha é o array completo de células. */
+    rows: string[][]
+    /** Índice da coluna selecionada (para o painel de estatísticas), ou `null`. */
+    selectedIndex?: number | null
+  }>(),
+  { selectedIndex: null },
+)
+
+const emit = defineEmits<{
+  /** Coluna selecionada pelo clique no cabeçalho (abre/atualiza o painel de stats). */
+  (e: 'select-column', index: number): void
 }>()
+
+function onSelect(index: number): void {
+  emit('select-column', index)
+}
 
 /** Altura estimada de cada linha, em px (usada pela virtualização). */
 const ROW_HEIGHT = 40
@@ -56,11 +70,21 @@ const isEmpty = computed(() => props.rows.length === 0)
             v-for="column in columns"
             :key="column.index"
             class="viewer-table__th"
-            :class="{ 'viewer-table__th--numeric': column.type === 'number' }"
+            :class="{
+              'viewer-table__th--numeric': column.type === 'number',
+              'viewer-table__th--selected': column.index === selectedIndex,
+            }"
             scope="col"
+            :aria-selected="column.index === selectedIndex"
           >
-            <span class="viewer-table__th-label">{{ column.label }}</span>
-            <span class="viewer-table__th-type">{{ column.type }}</span>
+            <button
+              type="button"
+              class="viewer-table__th-button"
+              @click="onSelect(column.index)"
+            >
+              <span class="viewer-table__th-label">{{ column.label }}</span>
+              <span class="viewer-table__th-type">{{ column.type }}</span>
+            </button>
           </th>
         </tr>
       </thead>
@@ -154,6 +178,29 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table__th--numeric {
   text-align: right;
   font-family: var(--mono);
+}
+
+/* Coluna selecionada: destaque do cabeçalho enquanto o painel de stats está aberto. */
+.viewer-table__th--selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.viewer-table__th-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.viewer-table__th-button:hover .viewer-table__th-label {
+  color: var(--text);
 }
 
 .viewer-table__th-label {

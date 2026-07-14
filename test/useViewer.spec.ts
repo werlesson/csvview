@@ -127,4 +127,72 @@ describe('useViewer', () => {
       expect(filteredRows.value.map((r) => r[0])).toEqual(['1'])
     })
   })
+
+  describe('seleção de coluna (painel de estatísticas)', () => {
+    it('sem seleção, não há coluna nem estatísticas selecionadas', () => {
+      const { selectedIndex, selectedColumn, selectedStats } = useViewer(() =>
+        makeDataset(),
+      )
+
+      expect(selectedIndex.value).toBeNull()
+      expect(selectedColumn.value).toBeNull()
+      expect(selectedStats.value).toBeNull()
+    })
+
+    // stats-select-column → selecionar expõe as stats da coluna
+    it('stats-select-column: selecionar uma coluna expõe suas estatísticas (Fase 5)', () => {
+      const { selectColumn, selectedColumn, selectedStats } = useViewer(() =>
+        makeDataset(),
+      )
+
+      selectColumn(2) // amount (number)
+
+      expect(selectedColumn.value?.label).toBe('amount')
+      expect(selectedStats.value?.type).toBe('number')
+      // As métricas numéricas só existem para colunas numéricas.
+      expect(selectedStats.value?.numeric).toBeDefined()
+    })
+
+    // stats-change-column → trocar de coluna atualiza o painel
+    it('stats-change-column: trocar de coluna atualiza a seleção', () => {
+      const { selectColumn, selectedColumn, selectedStats } = useViewer(() =>
+        makeDataset(),
+      )
+
+      selectColumn(0) // id (number)
+      expect(selectedColumn.value?.label).toBe('id')
+      expect(selectedStats.value?.type).toBe('number')
+
+      selectColumn(1) // name (text)
+      expect(selectedColumn.value?.label).toBe('name')
+      expect(selectedStats.value?.type).toBe('text')
+      expect(selectedStats.value?.numeric).toBeUndefined()
+    })
+
+    it('selecionar null limpa a seleção', () => {
+      const { selectColumn, selectedColumn, selectedStats } = useViewer(() =>
+        makeDataset(),
+      )
+
+      selectColumn(1)
+      expect(selectedColumn.value).not.toBeNull()
+
+      selectColumn(null)
+      expect(selectedColumn.value).toBeNull()
+      expect(selectedStats.value).toBeNull()
+    })
+
+    it('a seleção independe da visibilidade da coluna', () => {
+      const { selectColumn, hideColumn, selectedColumn, selectedStats } =
+        useViewer(() => makeDataset())
+
+      selectColumn(1) // name
+      hideColumn(1) // oculta name
+
+      // A coluna selecionada continua acessível, mesmo oculta.
+      expect(selectedColumn.value?.label).toBe('name')
+      expect(selectedColumn.value?.visible).toBe(false)
+      expect(selectedStats.value?.type).toBe('text')
+    })
+  })
 })
