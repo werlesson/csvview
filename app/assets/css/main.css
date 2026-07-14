@@ -1,1 +1,102 @@
 @import "tailwindcss";
+
+/*
+ * Tokens de design — fiéis a .spec/init/design/README.md#design-tokens.
+ * Dois temas, aplicados via atributo `data-theme` no elemento raiz.
+ * Default é dark: os valores dark ficam no :root (usados antes de o JS
+ * hidratar), e [data-theme="light"] sobrescreve para o tema claro.
+ */
+
+:root,
+[data-theme="dark"] {
+  /* Fundos e superfícies */
+  --bg: #08080a;
+  --bg-1: #0f0f12;
+  --bg-2: #161619;
+  --bg-hover: #1d1d22;
+
+  /* Bordas */
+  --border: #232329;
+  --border-strong: #31313a;
+
+  /* Texto */
+  --text: #eaeaee;
+  --text-2: #a1a1ac;
+  --text-3: #9a9aa6;
+
+  /* Accent */
+  --accent: #6e62f7;
+  --accent-hover: #8a7fff;
+  --accent-soft: rgba(110, 98, 247, 0.15);
+  --accent-fg: #ffffff;
+
+  /* Status */
+  --success: #3ecf8e;
+  --success-soft: rgba(62, 207, 142, 0.15);
+  --warning: #f3b13c;
+  --warning-soft: rgba(243, 177, 60, 0.15);
+  --error: #f2555a;
+  --error-soft: rgba(242, 85, 90, 0.15);
+  --info: #54a8ff;
+  --info-soft: rgba(84, 168, 255, 0.15);
+
+  /* Sombra */
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="light"] {
+  /* Fundos e superfícies */
+  --bg: #fbfbfc;
+  --bg-1: #ffffff;
+  --bg-2: #f5f5f7;
+  --bg-hover: #eeeef1;
+
+  /* Bordas */
+  --border: #e7e7ec;
+  --border-strong: #d6d6dd;
+
+  /* Texto */
+  --text: #17171c;
+  --text-2: #5a5a66;
+  --text-3: #6a6a74;
+
+  /* Accent */
+  --accent: #5a4fe0;
+  --accent-hover: #4a3fce;
+  --accent-soft: rgba(90, 79, 224, 0.11);
+  --accent-fg: #ffffff;
+
+  /* Status */
+  --success: #0f9d63;
+  --success-soft: rgba(15, 157, 99, 0.11);
+  --warning: #c1830f;
+  --warning-soft: rgba(193, 131, 15, 0.11);
+  --error: #dc3d43;
+  --error-soft: rgba(220, 61, 67, 0.11);
+  --info: #2b7fff;
+  --info-soft: rgba(43, 127, 255, 0.11);
+
+  /* Sombra */
+  --shadow: 0 8px 30px rgba(20, 20, 40, 0.12);
+}
+
+/* Raios (2–14 para chips/inputs/botões/cards; 20 para pílulas/superfícies grandes) */
+:root {
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 20px;
+
+  /* Tipografia — fontes auto-hospedadas (Geist / Geist Mono). */
+  --font: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono',
+    Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
