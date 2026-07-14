@@ -21,17 +21,43 @@ const isEmpty = computed(() => display.value === '—')
 
 <template>
   <td
-    class="csv-cell border-b border-gray-200 px-3 py-2 text-sm"
+    class="csv-cell"
     :class="[
-      isEmpty ? 'text-gray-400 italic' : 'text-gray-800',
+      isEmpty ? 'csv-cell--empty' : '',
       numeric ? 'csv-cell--numeric' : '',
     ]"
+    :title="isEmpty ? undefined : display"
   >
     {{ display }}
   </td>
 </template>
 
 <style scoped>
+/*
+ * Célula de **linha única**: a virtualização assume altura fixa (ROW_HEIGHT em
+ * ViewerTable), então o conteúdo NUNCA pode quebrar linha — senão a linha cresce
+ * e se sobrepõe às vizinhas. Texto longo é truncado com reticências; o valor
+ * completo fica no `title` (tooltip no hover).
+ */
+.csv-cell {
+  width: var(--col-w, 180px);
+  height: 40px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* Célula vazia (—): tom apagado, itálico. */
+.csv-cell--empty {
+  color: var(--text-3);
+  font-style: italic;
+}
+
 /* Colunas numéricas: alinhadas à direita, em mono com dígitos tabulares. */
 .csv-cell--numeric {
   text-align: right;

@@ -6,13 +6,13 @@ describe('CsvCell', () => {
   it('renders the provided value', () => {
     const wrapper = mount(CsvCell, { props: { value: 'hello' } })
     expect(wrapper.text()).toBe('hello')
-    expect(wrapper.classes()).not.toContain('italic')
+    expect(wrapper.classes()).not.toContain('csv-cell--empty')
   })
 
   it('renders a placeholder for empty values', () => {
     const wrapper = mount(CsvCell, { props: { value: null } })
     expect(wrapper.text()).toBe('—')
-    expect(wrapper.classes()).toContain('italic')
+    expect(wrapper.classes()).toContain('csv-cell--empty')
   })
 
   it('coerces numbers to text', () => {

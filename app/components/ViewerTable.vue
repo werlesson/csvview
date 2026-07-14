@@ -120,6 +120,9 @@ const isEmpty = computed(() => props.rows.length === 0)
 
 <style scoped>
 .viewer-table {
+  /* Largura de cada coluna. Custom property herda para o CsvCell (filho),
+     mantendo cabeçalho e células alinhados mesmo com estilos scoped. */
+  --col-w: 180px;
   position: relative;
   height: 70vh;
   min-height: 320px;
@@ -142,11 +145,15 @@ const isEmpty = computed(() => props.rows.length === 0)
   background: var(--bg-2);
 }
 
-/* Cabeçalho e linhas são tabelas de largura fixa, para alinhar as colunas. */
+/* Cabeçalho e linhas são tabelas de largura fixa, para alinhar as colunas.
+   `max-content` deixa a grade crescer além do container (scroll horizontal para
+   datasets largos, ex.: 70 colunas); `min-width: 100%` evita encolher quando há
+   poucas colunas. */
 .viewer-table__head .viewer-table__row,
 .viewer-table__body .viewer-table__row {
   display: table;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   table-layout: fixed;
 }
 
@@ -162,6 +169,7 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 .viewer-table__th {
+  width: var(--col-w);
   padding: 10px 12px;
   text-align: left;
   font-family: var(--font);
