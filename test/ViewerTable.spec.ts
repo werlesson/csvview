@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import ViewerTable from '~/components/ViewerTable.vue'
 import type { ViewerColumn } from '~/composables/useViewer'
 
@@ -391,5 +392,161 @@ describe('ViewerTable', () => {
     expect(headers[0]!.classes()).toContain('viewer-table__th--pinned')
     expect(headers[1]!.classes()).toContain('viewer-table__th--pinned')
     expect(headers[2]!.classes()).not.toContain('viewer-table__th--pinned')
+  })
+
+  // RF-07/RNF-01: a virtualização de linhas se mantém sob qualquer interação —
+  // o nº de <tr> de corpo no DOM fica limitado a (visíveis + overscan=12,
+  // ViewerTable.vue:64) e não cresce com o total de linhas. Em happy-dom o
+  // scroller mede offsetHeight 0 por padrão, então o virtualizer não renderiza
+  // nenhuma linha de corpo (ver MEMORY viewertable-virtualizer-no-body-rows-jsdom);
+  // o stub de `offsetHeight` abaixo dá ao scroller uma altura útil para exercitar
+  // a janela real de virtualização nestes casos.
+  describe('RF-07/RNF-01: invariante de virtualização sob interações', () => {
+    const SCROLLER_HEIGHT = 400
+
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(SCROLLER_HEIGHT)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function bigColumns(): ViewerColumn[] {
+      return [
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
+      ]
+    }
+
+    function bigRows(count: number): string[][] {
+      return Array.from({ length: count }, (_, i) => [
+        String(i),
+        `nome${i}`,
+        String(i * 1.5),
+      ])
+    }
+
+    async function bodyRowCount(wrapper: ReturnType<typeof mount>): Promise<number> {
+      await nextTick()
+      await nextTick()
+      return wrapper.findAll('.viewer-table__body .viewer-table__row').length
+    }
+
+    it('sem nenhuma interação: contagem de <tr> limitada e igual independente de N', async () => {
+      const small = mount(ViewerTable, { props: { columns: bigColumns(), rows: bigRows(100) } })
+      const large = mount(ViewerTable, {
+        props: { columns: bigColumns(), rows: bigRows(50_000) },
+      })
+
+      const smallCount = await bodyRowCount(small)
+      const largeCount = await bodyRowCount(large)
+
+      expect(smallCount).toBeGreaterThan(0)
+      expect(largeCount).toBe(smallCount)
+      expect(largeCount).toBeLessThan(100)
+    })
+
+    it('RF-01/RF-02: com ordenação single e multi-coluna aplicada, a contagem de <tr> continua limitada e igual independente de N', async () => {
+      const sortKeys = [
+        { index: 0, direction: 'asc' as const },
+        { index: 2, direction: 'desc' as const },
+      ]
+      const small = mount(ViewerTable, {
+        props: { columns: bigColumns(), rows: bigRows(100), sortKeys },
+      })
+      const large = mount(ViewerTable, {
+        props: { columns: bigColumns(), rows: bigRows(50_000), sortKeys },
+      })
+
+      const smallCount = await bodyRowCount(small)
+      const largeCount = await bodyRowCount(large)
+
+      expect(largeCount).toBe(smallCount)
+      expect(largeCount).toBeLessThan(100)
+    })
+
+    it('RF-04: durante e após o arraste de redimensionamento de uma coluna, a contagem de <tr> continua limitada', async () => {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: bigColumns(), rows: bigRows(50_000) },
+      })
+      const beforeCount = await bodyRowCount(wrapper)
+
+      const handle = wrapper.findAll('.viewer-table__th-resize')[1]!
+      await handle.trigger('pointerdown', { clientX: 100, pointerId: 1 })
+      await handle.trigger('pointermove', { clientX: 260, pointerId: 1 })
+      const duringCount = wrapper.findAll('.viewer-table__body .viewer-table__row').length
+      await handle.trigger('pointerup', { clientX: 260, pointerId: 1 })
+
+      // A largura efetiva vem da prop `column.width` (aplicada pelo pai via
+      // useViewer); o que se garante aqui é que o arraste em si — resize em
+      // andamento — não afeta a virtualização de linhas.
+      expect(beforeCount).toBeGreaterThan(0)
+      expect(duringCount).toBe(beforeCount)
+      expect(beforeCount).toBeLessThan(100)
+    })
+
+    it('RF-05: durante e após o arraste de reordenação de colunas, a contagem de <tr> continua limitada', async () => {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: bigColumns(), rows: bigRows(50_000) },
+      })
+      const beforeCount = await bodyRowCount(wrapper)
+
+      const buttons = wrapper.findAll('.viewer-table__th-button')
+      const headers = wrapper.findAll('.viewer-table__th')
+      await buttons[2]!.trigger('dragstart')
+      await headers[0]!.trigger('dragover')
+      const duringCount = wrapper.findAll('.viewer-table__body .viewer-table__row').length
+      await headers[0]!.trigger('drop')
+      await buttons[2]!.trigger('dragend')
+
+      expect(beforeCount).toBeGreaterThan(0)
+      expect(duringCount).toBe(beforeCount)
+      expect(beforeCount).toBeLessThan(100)
+    })
+
+    it('RF-06: com colunas fixadas (pin), a contagem de <tr> continua limitada e igual independente de N', async () => {
+      const pinnedColumns = (): ViewerColumn[] => [
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: true, width: 120 },
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: true, width: 90 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+      ]
+      const small = mount(ViewerTable, {
+        props: { columns: pinnedColumns(), rows: bigRows(100) },
+      })
+      const large = mount(ViewerTable, {
+        props: { columns: pinnedColumns(), rows: bigRows(50_000) },
+      })
+
+      const smallCount = await bodyRowCount(small)
+      const largeCount = await bodyRowCount(large)
+
+      expect(largeCount).toBe(smallCount)
+      expect(largeCount).toBeLessThan(100)
+    })
+
+    it('RF-07/RNF-01: com ordenação, redimensionamento, reordenação e pin aplicados juntos, a contagem de <tr> permanece limitada e não cresce com N', async () => {
+      const columnsWithInteractions = (): ViewerColumn[] => [
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: true, width: 260 },
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 90 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+      ]
+      const sortKeys = [{ index: 0, direction: 'asc' as const }]
+
+      const small = mount(ViewerTable, {
+        props: { columns: columnsWithInteractions(), rows: bigRows(200), sortKeys },
+      })
+      const large = mount(ViewerTable, {
+        props: { columns: columnsWithInteractions(), rows: bigRows(100_000), sortKeys },
+      })
+
+      const smallCount = await bodyRowCount(small)
+      const largeCount = await bodyRowCount(large)
+
+      expect(smallCount).toBeGreaterThan(0)
+      expect(largeCount).toBe(smallCount)
+      expect(largeCount).toBeLessThan(100)
+    })
   })
 })
