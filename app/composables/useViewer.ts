@@ -54,6 +54,11 @@ export interface SortKey {
 
 const EMPTY_DATASET: Dataset = { header: [], rows: [] }
 
+/** Largura mínima de coluna em pixels (RF-04) — sem largura máxima. */
+const MIN_COLUMN_WIDTH = 48
+/** Largura padrão de coluna quando não há largura definida. */
+const DEFAULT_COLUMN_WIDTH = 180
+
 export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   /** Termo da busca global (US-2.2). */
   const search = ref('')
@@ -67,6 +72,14 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
    * Estado apenas em memória de sessão — nada é gravado em IndexedDB (RNF-04).
    */
   const sortKeys = ref<SortKey[]>([])
+  /**
+   * Larguras de coluna definidas pelo usuário, por índice **original** da
+   * coluna (RF-04) — sobrevive a ocultar/reexibir e reordenar. Colunas sem
+   * entrada usam a largura padrão (`columnWidth`). Estado apenas em memória de
+   * sessão — nada é gravado em IndexedDB (RNF-04); ajustes são O(1), sem
+   * re-parse nem cópia de linhas (RNF-03).
+   */
+  const widths = ref<Map<number, number>>(new Map())
 
   const dataset = computed<Dataset>(() => toValue(source) ?? EMPTY_DATASET)
 
@@ -226,6 +239,25 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   }
 
   /**
+   * Redimensiona uma coluna (por índice **original**, RF-04): aplica a nova
+   * largura clampada a um mínimo de 48px (sem máximo). O(1), sem re-parse nem
+   * cópia de linhas (RNF-03); apenas em memória (RNF-04).
+   */
+  function resizeColumn(index: number, width: number): void {
+    const next = new Map(widths.value)
+    next.set(index, Math.max(MIN_COLUMN_WIDTH, width))
+    widths.value = next
+  }
+
+  /**
+   * Largura atual de uma coluna (por índice original), ou o padrão de 180px
+   * quando nenhuma largura foi definida.
+   */
+  function columnWidth(index: number): number {
+    return widths.value.get(index) ?? DEFAULT_COLUMN_WIDTH
+  }
+
+  /**
    * A coluna atualmente selecionada (para o painel de estatísticas), ou `null`
    * quando nenhuma está selecionada ou o índice caiu fora do dataset atual
    * (ex.: dataset trocado). Independe da visibilidade da coluna.
@@ -265,6 +297,9 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     sortedRows,
     sortColumn,
     sortColumnAdditive,
+    widths,
+    resizeColumn,
+    columnWidth,
     totalRows,
     visibleRowCount,
     isSearching,

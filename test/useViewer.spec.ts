@@ -322,4 +322,41 @@ describe('useViewer', () => {
       expect(selectedStats.value?.type).toBe('text')
     })
   })
+
+  describe('larguras de coluna (RF-04)', () => {
+    // widths-set-get → resizeColumn define e columnWidth lê a largura
+    it('widths-set-get: resizeColumn(0, 300) faz columnWidth(0) === 300', () => {
+      const { resizeColumn, columnWidth } = useViewer(() => makeDataset())
+
+      expect(columnWidth(0)).toBe(180) // padrão sem largura definida
+
+      resizeColumn(0, 300)
+      expect(columnWidth(0)).toBe(300)
+    })
+
+    // widths-clamp-min → largura mínima de 48px, sem máximo
+    it('widths-clamp-min: resizeColumn(0, 10) clampa em 48', () => {
+      const { resizeColumn, columnWidth } = useViewer(() => makeDataset())
+
+      resizeColumn(0, 10)
+      expect(columnWidth(0)).toBe(48)
+    })
+
+    // widths-survive-visibility-toggle → chave por índice original resiste a
+    // ocultar/reexibir outra coluna (RF-04)
+    it('widths-survive-visibility-toggle: alterar visibilidade de outra coluna não muda columnWidth(0)', () => {
+      const { resizeColumn, columnWidth, toggleColumn } = useViewer(() =>
+        makeDataset(),
+      )
+
+      resizeColumn(0, 300)
+      expect(columnWidth(0)).toBe(300)
+
+      toggleColumn(1) // oculta "name"
+      expect(columnWidth(0)).toBe(300)
+
+      toggleColumn(1) // reexibe "name"
+      expect(columnWidth(0)).toBe(300)
+    })
+  })
 })
