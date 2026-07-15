@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+import LogoMark from '~/components/LogoMark.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
+import { useTheme } from '~/composables/useTheme'
 
 // Toggle de tema inline (a Fase 2 formaliza um componente ThemeToggle
 // dedicado; aqui garantimos um controle presente e funcional no header).
@@ -26,8 +29,7 @@ const currentFile = computed(() =>
           <span class="brand__file">{{ currentFile }}</span>
         </a>
         <a v-else class="brand" href="/">
-          <span class="brand__mark">csvview.app</span>
-          <span class="brand__badge">100% no navegador</span>
+          <LogoMark />
         </a>
 
         <button
@@ -90,27 +92,12 @@ const currentFile = computed(() =>
   color: var(--text);
 }
 
-.brand__mark {
-  font-family: var(--mono);
-  font-weight: 600;
-  font-size: 15px;
-}
-
 /* Nome do arquivo na barra de título (Viewer). */
 .brand__file {
   font-family: var(--mono);
   font-weight: 600;
   font-size: 15px;
   color: var(--text);
-}
-
-.brand__badge {
-  font-size: 12px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: var(--radius-pill);
-  padding: 2px 10px;
-  white-space: nowrap;
 }
 
 .theme-toggle {
@@ -148,16 +135,12 @@ const currentFile = computed(() =>
   max-width: none;
 }
 
-/* Responsivo: reduz gaps e esconde o selo em telas estreitas. */
+/* Responsivo: reduz gaps em telas estreitas. */
 @media (max-width: 640px) {
   .app-header__inner,
   .app-content {
     padding-left: 14px;
     padding-right: 14px;
-  }
-
-  .brand__badge {
-    display: none;
   }
 }
 </style>

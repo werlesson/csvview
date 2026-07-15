@@ -16,6 +16,8 @@ import type { FileRecord } from '~/composables/useDatabase'
  * Ref de design: `.spec/init/design/README.md#screen-1--tela-inicial--upload`.
  */
 
+definePageMeta({ pageTransition: { name: 'view', mode: 'out-in' } })
+
 const { openFile, reopenRecent, error, isOpening } = useOpenFile({
   navigate: (path) => navigateTo(path),
 })

@@ -17,6 +17,8 @@ import { useViewer } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
+definePageMeta({ pageTransition: { name: 'view', mode: 'out-in' } })
+
 const { dataset, hasDataset } = useCurrentDataset()
 
 // Acesso direto ao Viewer sem um dataset carregado → volta ao Upload.
