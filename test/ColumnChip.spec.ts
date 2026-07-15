@@ -18,6 +18,20 @@ describe('ColumnChip', () => {
     expect(wrapper.get('.chip__type').text()).toBe('amount')
   })
 
+  it('renders the new engine types (integer/decimal/boolean/email/url)', () => {
+    for (const type of ['integer', 'decimal', 'boolean', 'email', 'url'] as const) {
+      const wrapper = mount(ColumnChip, { props: { label: 'col', type } })
+      expect(wrapper.get('.chip__type').text()).toBe(type)
+    }
+  })
+
+  it('preserves the design-system members (id/amount/status)', () => {
+    for (const type of ['id', 'amount', 'status'] as const) {
+      const wrapper = mount(ColumnChip, { props: { label: 'col', type } })
+      expect(wrapper.get('.chip__type').text()).toBe(type)
+    }
+  })
+
   it('defaults the type to text', () => {
     const wrapper = mount(ColumnChip, { props: { label: 'description' } })
     expect(wrapper.get('.chip__type').text()).toBe('text')

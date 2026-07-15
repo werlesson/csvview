@@ -16,6 +16,11 @@ export type ColumnType =
   | 'number'
   | 'text'
   | 'status'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'email'
+  | 'url'
 
 withDefaults(
   defineProps<{

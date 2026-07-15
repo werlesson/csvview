@@ -136,3 +136,26 @@ body {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/*
+ * Transição de página landing → Viewer (RF-07), via `pageTransition: { name:
+ * 'view', mode: 'out-in' }` em `app/pages/index.vue` e `app/pages/viewer.vue`.
+ * Classes globais (a transição de página do Nuxt não é escopada a um único
+ * componente). Duração dentro de 150–300ms (RNF-01).
+ */
+.view-enter-active,
+.view-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.view-enter-from,
+.view-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-enter-active,
+  .view-leave-active {
+    transition: none;
+  }
+}

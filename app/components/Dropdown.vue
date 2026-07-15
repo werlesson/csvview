@@ -114,16 +114,18 @@ onBeforeUnmount(() => {
       <slot name="trigger">{{ label }}</slot>
     </button>
 
-    <div
-      v-show="open"
-      ref="panel"
-      class="dropdown__panel"
-      role="menu"
-      @keydown.esc.prevent="closeMenu(true)"
-      @keydown="onPanelKeydown"
-    >
-      <slot />
-    </div>
+    <Transition name="dropdown">
+      <div
+        v-show="open"
+        ref="panel"
+        class="dropdown__panel"
+        role="menu"
+        @keydown.esc.prevent="closeMenu(true)"
+        @keydown="onPanelKeydown"
+      >
+        <slot />
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -170,5 +172,24 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+/* Transição de abrir/fechar (RF-06c, UI-02): fade + leve translateY. */
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.dropdown-enter-from,
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropdown-enter-active,
+  .dropdown-leave-active {
+    transition-duration: 0s;
+  }
 }
 </style>

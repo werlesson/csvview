@@ -5,9 +5,9 @@ import type { ViewerColumn } from '~/composables/useViewer'
 
 function makeColumns(): ViewerColumn[] {
   return [
-    { index: 0, label: 'id', type: 'number', visible: true },
-    { index: 1, label: 'name', type: 'text', visible: true },
-    { index: 2, label: 'amount', type: 'number', visible: false },
+    { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+    { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+    { index: 2, label: 'amount', type: 'number', visible: false, pinned: false, width: 180 },
   ]
 }
 
@@ -64,5 +64,37 @@ describe('ViewerToolbar', () => {
     const emitted = wrapper.emitted('toggle-column')
     expect(emitted).toBeTruthy()
     expect(emitted!.at(-1)).toEqual([1])
+  })
+
+  // UI-05: o controle de pin no menu "Colunas" emite toggle-pin com o índice
+  // original da coluna — mesmo estado do botão de pin do cabeçalho da tabela.
+  it('emite "toggle-pin" ao acionar o controle de pin de um item do menu "Colunas"', async () => {
+    const wrapper = mountToolbar()
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    const pinButtons = wrapper.findAll('.columns-menu__pin')
+    expect(pinButtons).toHaveLength(3)
+
+    await pinButtons[0]!.trigger('click')
+
+    expect(wrapper.emitted('toggle-pin')).toEqual([[0]])
+  })
+
+  // UI-05: o item de uma coluna fixada é visualmente distinguível, reusando a
+  // variação `pinned` de ColumnChip.
+  it('reflete a coluna fixada com a variação "pinned" de ColumnChip no menu "Colunas"', async () => {
+    const columns = makeColumns()
+    columns[0]!.pinned = true
+    const wrapper = mountToolbar({ columns })
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    const items = wrapper.findAll('.columns-menu__item')
+    expect(items[0]!.classes()).toContain('columns-menu__item--pinned')
+    expect(items[1]!.classes()).not.toContain('columns-menu__item--pinned')
+
+    expect(items[0]!.find('.chip--pinned').exists()).toBe(true)
+    expect(items[1]!.find('.chip--pinned').exists()).toBe(false)
   })
 })

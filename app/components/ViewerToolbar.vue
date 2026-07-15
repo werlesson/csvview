@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import SearchInput from '~/components/SearchInput.vue'
 import Dropdown from '~/components/Dropdown.vue'
+import ColumnChip from '~/components/ColumnChip.vue'
 import { formatRowCount } from '~/services/formatFile'
 import type { ViewerColumn } from '~/composables/useViewer'
 
@@ -13,12 +14,17 @@ import type { ViewerColumn } from '~/composables/useViewer'
  * de features adiadas (Filtros, Exportar) ficam **fora do escopo do MVP** e não
  * são renderizados aqui.
  *
+ * Cada item do menu "Colunas" reusa {@link ColumnChip} (variação `pinned`) e
+ * expõe um controle de fixar/desfixar equivalente ao botão de pin do
+ * cabeçalho da tabela (`toggle-pin`, UI-05) — os dois controles operam sobre o
+ * mesmo estado de fixação (`togglePin` em `useViewer`).
+ *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
 defineProps<{
   /** Total de linhas do dataset (sem filtro). */
   rowCount: number
-  /** Colunas do dataset, com tipo e visibilidade atual. */
+  /** Colunas do dataset, com tipo, visibilidade e fixação atuais. */
   columns: ViewerColumn[]
   /** Termo de busca (suporta `v-model:search`). */
   search: string
@@ -27,6 +33,7 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'update:search', value: string): void
   (e: 'toggle-column', index: number): void
+  (e: 'toggle-pin', index: number): void
 }>()
 
 function onSearch(value: string): void {
@@ -35,6 +42,10 @@ function onSearch(value: string): void {
 
 function onToggle(index: number): void {
   emit('toggle-column', index)
+}
+
+function onTogglePin(index: number): void {
+  emit('toggle-pin', index)
 }
 </script>
 
@@ -67,16 +78,40 @@ function onToggle(index: number): void {
         </template>
         <ul class="columns-menu" role="none">
           <li v-for="column in columns" :key="column.index" role="none">
-            <label class="columns-menu__item">
-              <input
-                type="checkbox"
-                class="columns-menu__checkbox"
-                :checked="column.visible"
-                @change="onToggle(column.index)"
+            <div
+              class="columns-menu__item"
+              :class="{ 'columns-menu__item--pinned': column.pinned }"
+            >
+              <label class="columns-menu__visibility">
+                <input
+                  type="checkbox"
+                  class="columns-menu__checkbox"
+                  :checked="column.visible"
+                  @change="onToggle(column.index)"
+                >
+                <ColumnChip
+                  class="columns-menu__chip"
+                  :label="column.label"
+                  :type="column.type"
+                  :pinned="column.pinned"
+                />
+              </label>
+              <button
+                type="button"
+                class="columns-menu__pin"
+                :class="{ 'columns-menu__pin--active': column.pinned }"
+                :aria-pressed="column.pinned"
+                :aria-label="column.pinned ? `Desfixar coluna ${column.label}` : `Fixar coluna ${column.label}`"
+                @click="onTogglePin(column.index)"
               >
-              <span class="columns-menu__label">{{ column.label }}</span>
-              <span class="columns-menu__type">{{ column.type }}</span>
-            </label>
+                <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                  <path
+                    d="M4 1.5 H8 L7.4 5 L9.5 6.8 H6.5 L5.8 10.5 H5.2 L4.5 6.8 H1.5 L3.6 5 Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
           </li>
         </ul>
       </Dropdown>
@@ -149,7 +184,6 @@ function onToggle(index: number): void {
   gap: 8px;
   padding: 6px 8px;
   border-radius: var(--radius-sm);
-  cursor: pointer;
   font-size: 13px;
   color: var(--text);
 }
@@ -158,24 +192,61 @@ function onToggle(index: number): void {
   background: var(--bg-hover);
 }
 
+/* Item de coluna fixada (UI-05): mesma variação visual do chip (`chip--pinned`,
+   borda accent), aplicada também à linha do item inteira no menu. */
+.columns-menu__item--pinned {
+  border: 1px solid var(--accent);
+}
+
+.columns-menu__visibility {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
 .columns-menu__checkbox {
   flex: none;
   accent-color: var(--accent);
 }
 
-.columns-menu__label {
+.columns-menu__chip {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.columns-menu__type {
+.columns-menu__chip :deep(.chip__label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Controle de fixar/desfixar (UI-05): equivalente ao botão de pin do
+   cabeçalho da tabela — mesmo estado (`toggle-pin`), reutilizado aqui no menu
+   "Colunas". */
+.columns-menu__pin {
   flex: none;
-  font-family: var(--mono);
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
   color: var(--text-3);
+  cursor: pointer;
+}
+
+.columns-menu__pin:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.columns-menu__pin--active {
+  color: var(--accent);
 }
 
 @media (max-width: 640px) {

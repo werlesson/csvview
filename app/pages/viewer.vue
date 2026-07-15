@@ -17,24 +17,36 @@ import { useViewer } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
-const { dataset, hasDataset } = useCurrentDataset()
+definePageMeta({ pageTransition: { name: 'view', mode: 'out-in' } })
+
+const { dataset, hasDataset, meta } = useCurrentDataset()
 
 // Acesso direto ao Viewer sem um dataset carregado → volta ao Upload.
 if (!hasDataset.value) {
   await navigateTo('/')
 }
 
+// Título da aba com o nome do arquivo (mesmo padrão do brand__file no header).
+useHead({ title: computed(() => meta.value?.name ?? 'Viewer') })
+
 const {
   search,
   columns,
-  visibleColumns,
-  filteredRows,
   totalRows,
   toggleColumn,
   selectedIndex,
   selectedColumn,
   selectedStats,
   selectColumn,
+  sortKeys,
+  sortedRows,
+  sortColumn,
+  sortColumnAdditive,
+  resizeColumn,
+  columnWidth,
+  reorderColumn,
+  togglePin,
+  displayColumns,
 } = useViewer(() => dataset.value)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
@@ -47,14 +59,21 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
       :row-count="totalRows"
       :columns="columns"
       @toggle-column="toggleColumn"
+      @toggle-pin="togglePin"
     />
 
     <div class="viewer__body">
       <ViewerTable
-        :columns="visibleColumns"
-        :rows="filteredRows"
+        :columns="displayColumns"
+        :rows="sortedRows"
         :selected-index="selectedIndex"
+        :sort-keys="sortKeys"
         @select-column="selectColumn"
+        @sort="sortColumn"
+        @sort-additive="sortColumnAdditive"
+        @resize="resizeColumn"
+        @reorder="reorderColumn"
+        @toggle-pin="togglePin"
       />
 
       <StatsPanel :label="selectedLabel" :stats="selectedStats" />

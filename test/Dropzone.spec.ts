@@ -71,4 +71,13 @@ describe('Dropzone', () => {
 
     expect(wrapper.emitted('select')).toBeUndefined()
   })
+
+  it('aplica dropzone--disabled e o pulso de "abrindo" quando disabled=true (RF-06a)', () => {
+    const enabled = mount(Dropzone, { props: { disabled: false } })
+    expect(enabled.classes()).not.toContain('dropzone--disabled')
+
+    const disabled = mount(Dropzone, { props: { disabled: true } })
+    expect(disabled.classes()).toContain('dropzone--disabled')
+    expect(disabled.find('.dropzone__icon-wrap').exists()).toBe(true)
+  })
 })
