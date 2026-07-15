@@ -4,6 +4,7 @@ import {
   columnValues,
   computeColumnStats,
   inferColumnType,
+  makeComparator,
   type ColumnStats,
   type ColumnType,
 } from '~/services/columnStats'
@@ -35,6 +36,22 @@ export interface ViewerColumn {
   visible: boolean
 }
 
+/** Direção de ordenação de uma chave. */
+export type SortDirection = 'asc' | 'desc'
+
+/**
+ * Uma chave de ordenação: coluna (por índice **original**, não pela posição
+ * renderizada — sobrevive a ocultar/reexibir e reordenar) e direção. A ordem
+ * das chaves no array é a prioridade decrescente (a primeira é a de maior
+ * prioridade).
+ */
+export interface SortKey {
+  /** Índice original da coluna no cabeçalho do dataset. */
+  index: number
+  /** Direção da comparação nesta coluna. */
+  direction: SortDirection
+}
+
 const EMPTY_DATASET: Dataset = { header: [], rows: [] }
 
 export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
@@ -44,6 +61,12 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   const hidden = ref<Set<number>>(new Set())
   /** Índice da coluna selecionada para o painel de estatísticas (US-3.1). */
   const selectedIndex = ref<number | null>(null)
+  /**
+   * Chaves de ordenação ativas, por índice **original** da coluna e em ordem de
+   * prioridade decrescente (RF-01, RF-02). Vazio = ordem original do dataset.
+   * Estado apenas em memória de sessão — nada é gravado em IndexedDB (RNF-04).
+   */
+  const sortKeys = ref<SortKey[]>([])
 
   const dataset = computed<Dataset>(() => toValue(source) ?? EMPTY_DATASET)
 
@@ -100,6 +123,37 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     )
   })
 
+  /**
+   * Linhas exibidas já ordenadas (RF-01, RF-02, RF-03). Deriva de
+   * `filteredRows`, preservando a invariante da busca (a busca casa em qualquer
+   * coluna). Sem chaves ativas, devolve `filteredRows` intacto (ordem original);
+   * com chaves, ordena uma **cópia** aplicando `makeComparator` (por tipo
+   * inferido) em prioridade decrescente. Como o `sort` do V8 é estável, empates
+   * preservam a ordem, viabilizando a ordenação multi-chave incremental.
+   *
+   * A ordenação é **síncrona** neste `computed` (sem Web Worker nem chunking),
+   * conforme RNF-02; só copia ao ordenar, não a cada interação de coluna.
+   */
+  const sortedRows = computed<string[][]>(() => {
+    const keys = sortKeys.value
+    const rows = filteredRows.value
+    if (keys.length === 0) return rows
+
+    const types = columnTypes.value
+    const comparators = keys.map((key) => ({
+      index: key.index,
+      compare: makeComparator(types[key.index] ?? 'text', key.direction),
+    }))
+
+    return [...rows].sort((rowA, rowB) => {
+      for (const { index, compare } of comparators) {
+        const result = compare(rowA[index], rowB[index])
+        if (result !== 0) return result
+      }
+      return 0
+    })
+  })
+
   /** Total de linhas do dataset (sem filtro). */
   const totalRows = computed(() => dataset.value.rows.length)
   /** Nº de linhas atualmente exibidas (após a busca). */
@@ -130,6 +184,45 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   /** Limpa a busca, restaurando o dataset completo. */
   function clearSearch(): void {
     search.value = ''
+  }
+
+  /**
+   * Ordenação por **clique simples** (sem Shift) num cabeçalho (RF-01): trata a
+   * coluna como a única chave, descartando quaisquer outras, e avança o ciclo
+   * `asc → desc → sem ordenação`. Partindo de "sem ordenação" (ou de uma chave
+   * diferente / multi-coluna), reinicia em `asc`; se a coluna já for a única
+   * chave, avança `asc → desc` e, de `desc`, esvazia (volta à ordem original).
+   */
+  function sortColumn(index: number): void {
+    const keys = sortKeys.value
+    const isSoleKey = keys.length === 1 && keys[0]!.index === index
+    if (isSoleKey) {
+      sortKeys.value =
+        keys[0]!.direction === 'asc' ? [{ index, direction: 'desc' }] : []
+    } else {
+      sortKeys.value = [{ index, direction: 'asc' }]
+    }
+  }
+
+  /**
+   * Ordenação por **Shift+clique** num cabeçalho (RF-02): adiciona a coluna às
+   * chaves ativas sem descartar as anteriores, ao fim (menor prioridade). Se a
+   * coluna já é chave, avança seu ciclo `asc → desc → sem ordenação`; ao chegar
+   * em "sem ordenação" a coluna é REMOVIDA, e as demais mantêm a ordem relativa
+   * de prioridade.
+   */
+  function sortColumnAdditive(index: number): void {
+    const keys = sortKeys.value
+    const existing = keys.find((key) => key.index === index)
+    if (existing === undefined) {
+      sortKeys.value = [...keys, { index, direction: 'asc' }]
+    } else if (existing.direction === 'asc') {
+      sortKeys.value = keys.map((key) =>
+        key.index === index ? { index, direction: 'desc' } : key,
+      )
+    } else {
+      sortKeys.value = keys.filter((key) => key.index !== index)
+    }
   }
 
   /**
@@ -168,6 +261,10 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     columnTypes,
     columnStats,
     filteredRows,
+    sortKeys,
+    sortedRows,
+    sortColumn,
+    sortColumnAdditive,
     totalRows,
     visibleRowCount,
     isSearching,
