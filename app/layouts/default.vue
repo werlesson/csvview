@@ -25,12 +25,11 @@ const currentFile = computed(() =>
   <div class="app-shell">
     <header class="app-header">
       <div class="app-header__inner" :class="{ 'app-header__inner--wide': isViewer }">
-        <a v-if="currentFile" class="brand" href="/" :title="`${currentFile} — voltar ao início`">
-          <span class="brand__file">{{ currentFile }}</span>
-        </a>
-        <a v-else class="brand" href="/">
+        <a class="brand" href="/">
           <LogoMark />
         </a>
+
+        <span v-if="currentFile" class="brand__file" :title="currentFile">{{ currentFile }}</span>
 
         <button
           type="button"
@@ -92,8 +91,9 @@ const currentFile = computed(() =>
   color: var(--text);
 }
 
-/* Nome do arquivo na barra de título (Viewer). */
+/* Nome do arquivo na barra de título (Viewer), ao lado do logo. */
 .brand__file {
+  margin-left: auto;
   font-family: var(--mono);
   font-weight: 600;
   font-size: 15px;
