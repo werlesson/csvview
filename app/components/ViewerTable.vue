@@ -28,6 +28,15 @@ import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useView
  * largura uniforme anterior — `gridWidth` soma as larguras por coluna e cada
  * `<th>`/célula recebe `--col-w` individualmente.
  *
+ * O corpo do `<th>` (o botão de ordenação) é arrastável via Drag and Drop
+ * nativo (RF-05): soltar sobre outro cabeçalho emite `reorder(from, to)` com
+ * as posições renderizadas (não o índice original — quem resolve para índice
+ * original e aplica o limite de grupo fixado/não-fixado é `reorderColumn` em
+ * `useViewer`). Durante o arraste, a coluna em movimento e o ponto de inserção
+ * ganham destaque visual (UI-04). A zona de arraste é o botão de ordenação —
+ * distinta do handle de resize (UI-03) e do botão de estatísticas (UI-06),
+ * ambos não-arrastáveis.
+ *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
 const props = withDefaults(
@@ -53,6 +62,8 @@ const emit = defineEmits<{
   (e: 'sort-additive', index: number): void
   /** Arraste da borda direita do cabeçalho: nova largura em px para a coluna (índice original, RF-04). */
   (e: 'resize', index: number, width: number): void
+  /** Soltura do arraste de reordenação: posições renderizadas de origem/destino (RF-05). */
+  (e: 'reorder', from: number, to: number): void
 }>()
 
 /** Clique no cabeçalho: ordena (RF-01), ou adiciona à ordenação multi-coluna com Shift (RF-02). */
@@ -152,6 +163,52 @@ function onResizePointerUp(event: PointerEvent): void {
   resizingIndex.value = null
 }
 
+/** Posição renderizada (dentro de `columns`) da coluna sendo arrastada para reordenar, ou `null`. */
+const dragFromPos = ref<number | null>(null)
+/** Posição renderizada sobre a qual o arraste está no momento (ponto de inserção), ou `null`. */
+const dragOverPos = ref<number | null>(null)
+
+/** Início do arraste de reordenação (RF-05): registra a posição de origem. */
+function onHeaderDragStart(pos: number, event: DragEvent): void {
+  dragFromPos.value = pos
+  dragOverPos.value = pos
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(pos))
+  }
+}
+
+/** Cabeçalho sobrevoado durante o arraste: atualiza o ponto de inserção (UI-04). */
+function onHeaderDragOver(pos: number): void {
+  if (dragFromPos.value === null) return
+  dragOverPos.value = pos
+}
+
+/** Soltura sobre um cabeçalho: emite `reorder(from, to)` com as posições renderizadas (RF-05). */
+function onHeaderDrop(pos: number): void {
+  if (dragFromPos.value === null) return
+  if (dragFromPos.value !== pos) emit('reorder', dragFromPos.value, pos)
+  dragFromPos.value = null
+  dragOverPos.value = null
+}
+
+/** Fim do arraste (`dragend`), inclusive quando solto fora de um cabeçalho válido. */
+function onHeaderDragEnd(): void {
+  dragFromPos.value = null
+  dragOverPos.value = null
+}
+
+/**
+ * Lado do indicador de inserção (UI-04) para o cabeçalho na posição `pos`,
+ * ou `null` quando não é o ponto de inserção corrente. O lado (antes/depois)
+ * segue a direção do arraste em relação à origem.
+ */
+function dropIndicatorFor(pos: number): 'before' | 'after' | null {
+  if (dragFromPos.value === null) return null
+  if (dragOverPos.value !== pos || dragFromPos.value === pos) return null
+  return dragOverPos.value < dragFromPos.value ? 'before' : 'after'
+}
+
 const scroller = ref<HTMLElement | null>(null)
 
 const rowVirtualizer = useVirtualizer(
@@ -176,7 +233,10 @@ const isEmpty = computed(() => props.rows.length === 0)
   <div
     ref="scroller"
     class="viewer-table"
-    :class="{ 'viewer-table--resizing': resizingIndex !== null }"
+    :class="{
+      'viewer-table--resizing': resizingIndex !== null,
+      'viewer-table--reordering': dragFromPos !== null,
+    }"
     role="region"
     aria-label="Tabela de dados"
   >
@@ -184,23 +244,31 @@ const isEmpty = computed(() => props.rows.length === 0)
       <thead class="viewer-table__head">
         <tr class="viewer-table__row" :style="{ width: gridWidth }">
           <th
-            v-for="column in columns"
+            v-for="(column, pos) in columns"
             :key="column.index"
             class="viewer-table__th"
             :class="{
               'viewer-table__th--numeric': column.type === 'number',
               'viewer-table__th--selected': column.index === selectedIndex,
               'viewer-table__th--sorted': sortDirectionFor(column.index) !== null,
+              'viewer-table__th--dragging': dragFromPos === pos,
+              'viewer-table__th--drop-before': dropIndicatorFor(pos) === 'before',
+              'viewer-table__th--drop-after': dropIndicatorFor(pos) === 'after',
             }"
             :style="colWidthStyle(column)"
             scope="col"
             :aria-selected="column.index === selectedIndex"
             :aria-sort="ariaSortFor(column.index)"
+            @dragover.prevent="onHeaderDragOver(pos)"
+            @drop.prevent="onHeaderDrop(pos)"
           >
             <button
               type="button"
               class="viewer-table__th-button"
+              draggable="true"
               @click="onHeaderClick(column.index, $event)"
+              @dragstart="onHeaderDragStart(pos, $event)"
+              @dragend="onHeaderDragEnd"
             >
               <span class="viewer-table__th-label">{{ column.label }}</span>
               <span class="viewer-table__th-type">{{ column.type }}</span>
@@ -228,6 +296,7 @@ const isEmpty = computed(() => props.rows.length === 0)
             <button
               type="button"
               class="viewer-table__th-stats"
+              draggable="false"
               :aria-label="`Ver estatísticas de ${column.label}`"
               @click="onSelectStats(column.index)"
             >
@@ -385,6 +454,30 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table--resizing * {
   cursor: col-resize !important;
   user-select: none;
+}
+
+/* Durante o arraste de reordenação (RF-05), o cursor reflete o gesto de
+   arrastar em toda a tabela. */
+.viewer-table--reordering,
+.viewer-table--reordering * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* Feedback visual da coluna em movimento (UI-04): esmaece o cabeçalho de
+   origem enquanto o arraste está em andamento. */
+.viewer-table__th--dragging {
+  opacity: 0.4;
+}
+
+/* Feedback visual do ponto de inserção (UI-04): uma borda de destaque no lado
+   por onde a coluna arrastada entraria ao ser solta. */
+.viewer-table__th--drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.viewer-table__th--drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 
 /* Colunas numéricas: cabeçalho à direita em mono, alinhado às células. */

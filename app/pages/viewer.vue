@@ -27,14 +27,19 @@ if (!hasDataset.value) {
 const {
   search,
   columns,
-  visibleColumns,
-  filteredRows,
   totalRows,
   toggleColumn,
   selectedIndex,
   selectedColumn,
   selectedStats,
   selectColumn,
+  sortKeys,
+  sortedRows,
+  sortColumn,
+  sortColumnAdditive,
+  resizeColumn,
+  reorderColumn,
+  displayColumns,
 } = useViewer(() => dataset.value)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
@@ -51,10 +56,15 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 
     <div class="viewer__body">
       <ViewerTable
-        :columns="visibleColumns"
-        :rows="filteredRows"
+        :columns="displayColumns"
+        :rows="sortedRows"
         :selected-index="selectedIndex"
+        :sort-keys="sortKeys"
         @select-column="selectColumn"
+        @sort="sortColumn"
+        @sort-additive="sortColumnAdditive"
+        @resize="resizeColumn"
+        @reorder="reorderColumn"
       />
 
       <StatsPanel :label="selectedLabel" :stats="selectedStats" />

@@ -24,6 +24,20 @@ async function dragResizeHandle(
   await handle.trigger('pointerup', { clientX: endX, pointerId: 1 })
 }
 
+/** Dispara dragstart (na posição de origem) → dragover/drop (na posição de destino). */
+async function dragReorderHeader(
+  wrapper: ReturnType<typeof mount>,
+  fromPos: number,
+  toPos: number,
+) {
+  const buttons = wrapper.findAll('.viewer-table__th-button')
+  const headers = wrapper.findAll('.viewer-table__th')
+  await buttons[fromPos]!.trigger('dragstart')
+  await headers[toPos]!.trigger('dragover')
+  await headers[toPos]!.trigger('drop')
+  await buttons[fromPos]!.trigger('dragend')
+}
+
 const ROWS = [
   ['1', 'Ana', '100'],
   ['2', 'Bruno', '250'],
@@ -281,5 +295,65 @@ describe('ViewerTable', () => {
 
     const handle = wrapper.findAll('.viewer-table__th-resize')[0]!
     expect(handle.attributes('role')).toBe('separator')
+  })
+
+  // RF-05: arrastar o cabeçalho de uma posição para outra emite reorder(from, to)
+  // com as posições renderizadas — refletido imediatamente por displayColumns
+  // no lado de useViewer (T05), aqui apenas o evento.
+  it('RF-05: arrastar o cabeçalho da posição 2 para a 0 emite reorder(2, 0)', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    await dragReorderHeader(wrapper, 2, 0)
+
+    expect(wrapper.emitted('reorder')).toEqual([[2, 0]])
+  })
+
+  it('RF-05: soltar na mesma posição não emite reorder', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    await dragReorderHeader(wrapper, 1, 1)
+
+    expect(wrapper.emitted('reorder')).toBeUndefined()
+  })
+
+  // UI-04: feedback visual da coluna em movimento e do ponto de inserção durante o arraste.
+  it('UI-04: aplica feedback visual à coluna arrastada e ao ponto de inserção durante o arraste', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+    const buttons = wrapper.findAll('.viewer-table__th-button')
+    const headers = wrapper.findAll('.viewer-table__th')
+
+    await buttons[0]!.trigger('dragstart')
+    await headers[2]!.trigger('dragover')
+
+    expect(headers[0]!.classes()).toContain('viewer-table__th--dragging')
+    expect(headers[2]!.classes()).toContain('viewer-table__th--drop-after')
+
+    await headers[2]!.trigger('drop')
+    await buttons[0]!.trigger('dragend')
+
+    expect(headers[0]!.classes()).not.toContain('viewer-table__th--dragging')
+    expect(headers[2]!.classes()).not.toContain('viewer-table__th--drop-after')
+  })
+
+  // UI-03/UI-06: a zona de arraste (botão de ordenação) é distinta do handle de
+  // resize e do botão de estatísticas — nenhum dos dois é arrastável.
+  it('UI-03/UI-06: o handle de resize e o botão de estatísticas não são arrastáveis', () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    const resizeHandle = wrapper.findAll('.viewer-table__th-resize')[0]!
+    const statsButton = wrapper.findAll('.viewer-table__th-stats')[0]!
+    const headerButton = wrapper.findAll('.viewer-table__th-button')[0]!
+
+    expect(resizeHandle.attributes('draggable')).not.toBe('true')
+    expect(statsButton.attributes('draggable')).toBe('false')
+    expect(headerButton.attributes('draggable')).toBe('true')
   })
 })
