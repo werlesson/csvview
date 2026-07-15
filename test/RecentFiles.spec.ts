@@ -53,11 +53,54 @@ describe('RecentFiles', () => {
       props: { files: [makeRecord({ id: 7 })] },
     })
 
-    await wrapper.find('.recent').trigger('click')
+    await wrapper.find('.recent__open').trigger('click')
 
     const emitted = wrapper.emitted('open')
     expect(emitted).toHaveLength(1)
     expect(emitted![0]![0]).toBe(7)
+  })
+
+  it('exige um segundo clique no botão de excluir para emitir "delete"', async () => {
+    const wrapper = mount(RecentFiles, {
+      props: { files: [makeRecord({ id: 7 })] },
+    })
+
+    const deleteButton = wrapper.get('.recent__delete')
+
+    await deleteButton.trigger('click')
+    expect(wrapper.emitted('delete')).toBeUndefined()
+    expect(deleteButton.classes()).toContain('recent__delete--confirm')
+
+    await deleteButton.trigger('click')
+    const emitted = wrapper.emitted('delete')
+    expect(emitted).toHaveLength(1)
+    expect(emitted![0]![0]).toBe(7)
+  })
+
+  it('cancela a confirmação de exclusão ao perder o foco', async () => {
+    const wrapper = mount(RecentFiles, {
+      props: { files: [makeRecord({ id: 7 })] },
+    })
+
+    const deleteButton = wrapper.get('.recent__delete')
+    await deleteButton.trigger('click')
+    expect(deleteButton.classes()).toContain('recent__delete--confirm')
+
+    await deleteButton.trigger('blur')
+    expect(deleteButton.classes()).not.toContain('recent__delete--confirm')
+
+    await deleteButton.trigger('click')
+    expect(wrapper.emitted('delete')).toBeUndefined()
+  })
+
+  it('clicar em excluir não emite "open"', async () => {
+    const wrapper = mount(RecentFiles, {
+      props: { files: [makeRecord({ id: 7 })] },
+    })
+
+    await wrapper.get('.recent__delete').trigger('click')
+
+    expect(wrapper.emitted('open')).toBeUndefined()
   })
 
   it('mostra o estado vazio quando não há recentes', () => {

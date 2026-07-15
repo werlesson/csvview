@@ -19,12 +19,15 @@ import { useViewer } from '~/composables/useViewer'
  */
 definePageMeta({ pageTransition: { name: 'view', mode: 'out-in' } })
 
-const { dataset, hasDataset } = useCurrentDataset()
+const { dataset, hasDataset, meta } = useCurrentDataset()
 
 // Acesso direto ao Viewer sem um dataset carregado → volta ao Upload.
 if (!hasDataset.value) {
   await navigateTo('/')
 }
+
+// Título da aba com o nome do arquivo (mesmo padrão do brand__file no header).
+useHead({ title: computed(() => meta.value?.name ?? 'Viewer') })
 
 const {
   search,

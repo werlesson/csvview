@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import IndexPage from '~/pages/index.vue'
 
@@ -12,10 +12,11 @@ vi.mock('~/composables/useOpenFile', () => ({
   }),
 }))
 
+const listFiles = vi.fn().mockResolvedValue([])
+const deleteFile = vi.fn().mockResolvedValue(undefined)
+
 vi.mock('~/composables/useFilesStore', () => ({
-  useFilesStore: () => ({
-    listFiles: vi.fn().mockResolvedValue([]),
-  }),
+  useFilesStore: () => ({ listFiles, deleteFile }),
 }))
 
 describe('index.vue (landing)', () => {
@@ -33,5 +34,36 @@ describe('index.vue (landing)', () => {
     expect(wrapper.text()).not.toContain(
       'Arraste um arquivo ou abra uma sessão recente. Tudo é processado',
     )
+  })
+
+  it('exclui um recente ao confirmar e recarrega a lista', async () => {
+    listFiles.mockResolvedValueOnce([
+      {
+        id: 7,
+        name: 'dados.csv',
+        delimiter: 'comma',
+        size_bytes: 10,
+        row_count: 1,
+        column_count: 1,
+        content: '',
+        created_at: Date.now(),
+        last_opened_at: Date.now(),
+      },
+    ])
+
+    const wrapper = mount(IndexPage)
+    await flushPromises()
+    const callsBeforeDelete = listFiles.mock.calls.length
+
+    const deleteButton = wrapper.get('.recent__delete')
+    await deleteButton.trigger('click')
+    expect(deleteFile).not.toHaveBeenCalled()
+
+    listFiles.mockResolvedValueOnce([])
+    await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(deleteFile).toHaveBeenCalledWith(7)
+    expect(listFiles.mock.calls.length).toBe(callsBeforeDelete + 1)
   })
 })

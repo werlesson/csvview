@@ -22,7 +22,7 @@ const { openFile, reopenRecent, error, isOpening } = useOpenFile({
   navigate: (path) => navigateTo(path),
 })
 
-const { listFiles } = useFilesStore()
+const { listFiles, deleteFile } = useFilesStore()
 const recents = ref<FileRecord[]>([])
 
 /** Recarrega a lista de recentes do store `files`. */
@@ -40,6 +40,11 @@ async function onSelect(file: File): Promise<void> {
 
 async function onReopen(id: number): Promise<void> {
   await reopenRecent(id)
+}
+
+async function onDeleteRecent(id: number): Promise<void> {
+  await deleteFile(id)
+  await refreshRecents()
 }
 </script>
 
@@ -65,7 +70,12 @@ async function onReopen(id: number): Promise<void> {
       </p>
     </div>
 
-    <RecentFiles class="upload__recents" :files="recents" @open="onReopen" />
+    <RecentFiles
+      class="upload__recents"
+      :files="recents"
+      @open="onReopen"
+      @delete="onDeleteRecent"
+    />
   </section>
 </template>
 

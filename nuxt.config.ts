@@ -14,6 +14,17 @@ export default defineNuxtConfig({
     preset: 'static',
   },
 
+  app: {
+    head: {
+      // Título padrão (tela de Upload) e sufixo de marca nas demais telas
+      // (ex.: Viewer define `useHead({ title: nomeDoArquivo })`).
+      titleTemplate: (titleChunk) =>
+        titleChunk
+          ? `${titleChunk} · csvview.app`
+          : 'csvview.app — Explorador de CSV no navegador',
+    },
+  },
+
   css: [
     // Fontes auto-hospedadas (bundles locais, sem CDN externo).
     '@fontsource-variable/geist',
