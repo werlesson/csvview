@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { useRoute } from 'vue-router'
 import DefaultLayout from '~/layouts/default.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
+import { useTheme } from '~/composables/useTheme'
 
 vi.mock('vue-router', () => ({
   useRoute: vi.fn(() => ({ path: '/' })),
@@ -26,6 +27,40 @@ describe('DefaultLayout (fora do Viewer)', () => {
     const brand = wrapper.get('a.brand')
     expect(brand.attributes('href')).toBe('/')
     expect(brand.find('img.logo-mark').exists()).toBe(true)
+  })
+})
+
+describe('DefaultLayout — toggle de tema consolidado (RF-08, T04)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.removeAttribute('data-theme')
+    useTheme().setTheme('dark')
+  })
+
+  it('renderiza exatamente um controle de alternância de tema no header, sem botão inline residual', () => {
+    const wrapper = mount(DefaultLayout)
+
+    const toggles = wrapper.findAll('.theme-toggle')
+    expect(toggles).toHaveLength(1)
+
+    // Nenhum resquício do botão inline antigo (glifos de texto lua/sol).
+    expect(wrapper.text()).not.toContain('☾')
+    expect(wrapper.text()).not.toContain('☀')
+  })
+
+  it('aciona toggleTheme ao clicar e persiste a escolha', async () => {
+    const wrapper = mount(DefaultLayout)
+    const { theme } = useTheme()
+
+    const toggle = wrapper.get('.theme-toggle')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+
+    await toggle.trigger('click')
+
+    expect(theme.value).toBe('light')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
+    expect(localStorage.getItem('csvview:theme')).toBe('light')
   })
 })
 

@@ -2,14 +2,8 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import LogoMark from '~/components/LogoMark.vue'
+import ThemeToggle from '~/components/ThemeToggle.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
-import { useTheme } from '~/composables/useTheme'
-
-// Toggle de tema inline (a Fase 2 formaliza um componente ThemeToggle
-// dedicado; aqui garantimos um controle presente e funcional no header).
-const { theme, toggleTheme } = useTheme()
-
-const isDark = computed(() => theme.value === 'dark')
 
 // Na barra de título, exibimos o nome do arquivo quando estamos no Viewer
 // (fiel ao design da Screen 2); nas demais rotas, a marca do produto.
@@ -31,16 +25,7 @@ const currentFile = computed(() =>
 
         <span v-if="currentFile" class="brand__file" :title="currentFile">{{ currentFile }}</span>
 
-        <button
-          type="button"
-          class="theme-toggle"
-          :aria-pressed="isDark"
-          :title="isDark ? 'Tema escuro' : 'Tema claro'"
-          aria-label="Alternar tema"
-          @click="toggleTheme"
-        >
-          {{ isDark ? '☾' : '☀' }}
-        </button>
+        <ThemeToggle />
       </div>
     </header>
 
@@ -97,25 +82,6 @@ const currentFile = computed(() =>
   font-family: var(--mono);
   font-weight: 600;
   font-size: 15px;
-  color: var(--text);
-}
-
-.theme-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  font-size: 15px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-
-.theme-toggle:hover {
-  background: var(--bg-hover);
   color: var(--text);
 }
 
