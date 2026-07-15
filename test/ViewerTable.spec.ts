@@ -5,9 +5,9 @@ import type { ViewerColumn } from '~/composables/useViewer'
 
 function makeColumns(): ViewerColumn[] {
   return [
-    { index: 0, label: 'id', type: 'number', visible: true },
-    { index: 1, label: 'name', type: 'text', visible: true },
-    { index: 2, label: 'amount', type: 'number', visible: true },
+    { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+    { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+    { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
   ]
 }
 

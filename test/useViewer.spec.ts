@@ -359,4 +359,127 @@ describe('useViewer', () => {
       expect(columnWidth(0)).toBe(300)
     })
   })
+
+  describe('ordem e pin com displayColumns (RF-05, RF-06)', () => {
+    // display-default-order → sem reorder/pin, displayColumns segue o cabeçalho
+    it('display-default-order: sem interações, displayColumns segue a ordem do cabeçalho', () => {
+      const { displayColumns } = useViewer(() => makeDataset())
+
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+      expect(displayColumns.value.every((c) => c.pinned === false)).toBe(true)
+    })
+
+    // reorder-intra-group → reorderColumn(2,0) move a coluna da posição 3 para 1
+    it('reorder-intra-group: reorderColumn(2,0) move a coluna da posição 3 para 1 em displayColumns', () => {
+      const { displayColumns, reorderColumn } = useViewer(() => makeDataset())
+
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+
+      reorderColumn(2, 0) // move "amount" (posição 3) para a posição 1
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'amount',
+        'id',
+        'name',
+      ])
+    })
+
+    // reorder-group-boundary → soltar não-fixada à esquerda de fixada não a
+    // insere no grupo fixado
+    it('reorder-group-boundary: soltar uma coluna não-fixada à esquerda de uma fixada mantém-na no grupo não-fixado', () => {
+      const { displayColumns, pinColumn, reorderColumn } = useViewer(() =>
+        makeDataset(),
+      )
+
+      pinColumn(0) // fixa "id"
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+
+      // Tenta soltar "name" (posição 1, não-fixada) na posição 0 (grupo fixado).
+      reorderColumn(1, 0)
+
+      // Permanece no grupo não-fixado: ordem inalterada.
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+      expect(displayColumns.value[0]!.pinned).toBe(true)
+      expect(displayColumns.value[1]!.pinned).toBe(false)
+    })
+
+    // pin-order-sequence → ordem do grupo fixado segue a sequência de fixação
+    it('pin-order-sequence: pinColumn(C) depois pinColumn(A) faz displayColumns iniciar por C, A', () => {
+      const { displayColumns, pinColumn } = useViewer(() => makeDataset())
+
+      pinColumn(2) // fixa "amount" (C)
+      pinColumn(0) // fixa "id" (A)
+
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'amount',
+        'id',
+        'name',
+      ])
+      expect(displayColumns.value[0]!.pinned).toBe(true)
+      expect(displayColumns.value[1]!.pinned).toBe(true)
+      expect(displayColumns.value[2]!.pinned).toBe(false)
+    })
+
+    // pin-toggle-unpin → togglePin desfixa uma coluna fixada
+    it('pin-toggle-unpin: togglePin alterna fixar e desfixar', () => {
+      const { displayColumns, togglePin, pinned } = useViewer(() =>
+        makeDataset(),
+      )
+
+      togglePin(1) // fixa "name"
+      expect(pinned.value.has(1)).toBe(true)
+      expect(displayColumns.value[0]!.label).toBe('name')
+
+      togglePin(1) // desfixa "name"
+      expect(pinned.value.has(1)).toBe(false)
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+    })
+
+    // order-pin-survive-visibility-toggle → ocultar/reexibir preserva ordem/pin
+    it('order-pin-survive-visibility-toggle: ocultar/reexibir preserva ordem e pin', () => {
+      const { displayColumns, pinColumn, reorderColumn, toggleColumn } =
+        useViewer(() => makeDataset())
+
+      pinColumn(0) // fixa "id"
+      reorderColumn(2, 1) // reordena dentro do grupo não-fixado: name/amount → amount/name
+
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'amount',
+        'name',
+      ])
+
+      toggleColumn(1) // oculta "name"
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'amount',
+      ])
+
+      toggleColumn(1) // reexibe "name"
+      expect(displayColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'amount',
+        'name',
+      ])
+    })
+  })
 })
