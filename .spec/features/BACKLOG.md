@@ -4,6 +4,15 @@
 > O MVP (Fases 1–8) já está implementado. Cada linha abaixo vira **uma invocação de `/plan`**,
 > que grava em `.spec/features/[slug]/` (`SPEC.md` + `PLAN.md` + `PHASES.md` executável pelo `ralph.sh`).
 
+## Status do planejamento
+
+| Feature | Planejada? | Artefatos |
+|---|---|---|
+| `table-interactions` | ✅ sim | `.spec/features/table-interactions/` (SPEC v1.1, PLAN, PHASES — 12 tarefas / 11 fases) |
+| `rich-types-and-stats` | ✅ sim | `.spec/features/rich-types-and-stats/` (SPEC v1.1, PLAN, PHASES — 7 tarefas / 2 fases) |
+| `filters` | ✅ sim | `.spec/features/filters/` (SPEC v1.1, PLAN, PHASES — 6 tarefas / 4 fases) |
+| demais (#4 em diante) | ⏳ pendente | rodar `/plan` por slug |
+
 ## Como usar este backlog
 
 1. Escolha uma feature (comece pelo Tier 1, na ordem).
