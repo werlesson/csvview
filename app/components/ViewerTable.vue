@@ -514,6 +514,10 @@ const isEmpty = computed(() => props.rows.length === 0)
   border-bottom: 1px solid var(--border);
   /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
   border-right: 1px solid var(--border);
+  /* Destaque animado ao trocar a coluna selecionada (RF-06b, UI-03): a
+     transição vive na base do th (não só em --selected) para animar também
+     a saída, quando a classe é removida. */
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .viewer-table__th-inner {
@@ -620,6 +624,12 @@ const isEmpty = computed(() => props.rows.length === 0)
 
 .viewer-table__th--selected .viewer-table__th-label {
   color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer-table__th {
+    transition-duration: 0s;
+  }
 }
 
 /* Hover de linha: realça a linha inteira sob o cursor (fiel ao design). */

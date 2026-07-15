@@ -9,42 +9,42 @@ Antes de implementar, leia:
 1. `.spec/features/landing-viewer-ui-refresh/SPEC.md` — requisitos RIGID que esta fase cobre
 2. `.spec/features/landing-viewer-ui-refresh/PLAN.md` — decomposição completa, dependências e riscos
 
-- [ ] T01 — Asset da logo SVG + componente `LogoMark.vue`
+- [x] T01 — Asset da logo SVG + componente `LogoMark.vue`
       Arquivos: `public/logo.svg`, `app/components/LogoMark.vue`, `test/LogoMark.spec.ts`
       Mudança: copiar `/mnt/c/Users/werlesson/Desktop/image.svg` para `public/logo.svg` (asset estático, sem processamento Vite); criar `LogoMark.vue` apresentacional puro (`<img src="/logo.svg">`, sem estado/composable), reutilizável entre landing e Viewer.
       Cobre: RF-03, RNF-04
       Acceptance criteria: `public/logo.svg` existe e é incluído por `yarn generate` entre os assets estáticos; `LogoMark.vue` renderiza uma imagem/SVG referenciando o asset local, sem dependência de rede externa, e não introduz estado (sem `ref`/composable).
       Testes: `test/LogoMark.spec.ts` — monta sem props obrigatórias; asserta `<img>`/`<svg>` presente com `alt` não vazio apontando para o asset local.
 
-- [ ] T05 — `RecentFiles.vue`: ícones decorativos só com `--accent`
+- [x] T05 — `RecentFiles.vue`: ícones decorativos só com `--accent`
       Arquivos: `app/components/RecentFiles.vue`, `test/RecentFiles.spec.ts`
       Mudança: remover `recent__icon--${i % 3}` e as classes `.recent__icon--0/1/2` (`--success`/`--info`/`--warning`); `.recent__icon` passa a usar `--accent`/`--accent-soft` para qualquer índice.
       Cobre: RF-05, RNF-03
       Acceptance criteria: nenhum `.recent__icon` da lista usa `--success`, `--info` ou `--warning` (em nenhuma posição); todos resolvem para `--accent`/`--accent-soft`. Evidência de contraste (não requer mudança de token): dark `#6e62f7` sobre composto `rgb(29,27,52)` ≈ 3.78:1; light `#5a4fe0` sobre composto `rgb(237,236,252)` ≈ 4.96:1 — ambos ≥ 3:1 (RNF-03).
       Testes: `test/RecentFiles.spec.ts` — com 3+ itens, nenhum elemento tem classe `recent__icon--0/1/2`; todos usam a mesma classe única `recent__icon`.
 
-- [ ] T06 — Landing: novo título e subtítulo do hero
+- [x] T06 — Landing: novo título e subtítulo do hero
       Arquivos: `app/pages/index.vue`, `test/pages/index.spec.ts`
       Mudança: substituir `.upload__title` por "O explorador de CSV para quem vive nos dados" e `.upload__subtitle` pelo novo texto de apoio especificado na SPEC (RF-02), sem tocar `Dropzone`/`RecentFiles`/`useOpenFile`.
       Cobre: RF-01, RF-02
       Acceptance criteria: o DOM renderizado contém o título com o texto exato novo e não contém mais "Solte um CSV e comece a explorar."; o subtítulo contém o texto exato novo e não contém mais o texto de apoio anterior.
       Testes: `test/pages/index.spec.ts` (novo) — monta `index.vue` com stubs de `useOpenFile`/`useFilesStore`; asserta texto exato do título/subtítulo novos e ausência dos textos antigos.
 
-- [ ] T07 — `Dropdown.vue`: transição animada de abrir/fechar
+- [x] T07 — `Dropdown.vue`: transição animada de abrir/fechar
       Arquivos: `app/components/Dropdown.vue`, `test/Dropdown.spec.ts`
       Mudança: envolver `<div class="dropdown__panel" v-show="open">` num `<Transition name="dropdown">` com fade + leve `translateY`, 150–300ms, e `@media (prefers-reduced-motion: reduce)` zerando a duração dentro do próprio `<style scoped>` do componente; `v-show="open"` continua o gatilho; foco/teclado/clique-fora inalterados.
       Cobre: RF-06 (item c — abrir/fechar painel "Colunas"), UI-02, RNF-01, RNF-02
       Acceptance criteria: abrir o menu produz um estado intermediário observável (classe `dropdown-enter-active`/equivalente) antes do estado final aberto; fechar produz o equivalente na direção inversa; a duração declarada está entre 150ms e 300ms; com `prefers-reduced-motion: reduce` emulado, a transição tem duração 0 (troca instantânea equivalente ao estado atual).
       Testes: `test/Dropdown.spec.ts` (existente, revisado) — ajustar as asserções de `style.display === 'none'` para aguardar o ciclo de transição/checar a classe intermediária em vez do `display` imediato; foco no primeiro item ao abrir e retorno de foco ao Escape continuam funcionando.
 
-- [ ] T08 — Destaque animado ao trocar a coluna selecionada
+- [x] T08 — Destaque animado ao trocar a coluna selecionada
       Arquivos: `app/components/ViewerTable.vue`, `app/components/StatsPanel.vue`, `test/ViewerTable.spec.ts`, `test/StatsPanel.spec.ts`
       Mudança: adicionar `transition: background-color, box-shadow, border-color` (150–300ms) a `.viewer-table__th--selected` em `ViewerTable.vue`; envolver `.stats-panel__content` num `<Transition name="stats-fade" mode="out-in">` em `StatsPanel.vue`; ambos com `@media (prefers-reduced-motion: reduce)` zerando a duração. Sem mudança de props/`selectColumn`.
       Cobre: RF-06 (item b — trocar coluna selecionada), UI-03, RNF-01, RNF-02
       Acceptance criteria: selecionar uma nova coluna dispara uma transição CSS observável (duração mensurável >0ms, entre 150–300ms) no `<th>` selecionado e/ou no painel de estatísticas; com `prefers-reduced-motion: reduce`, a duração é 0 sem quebrar a troca de conteúdo.
       Testes: `test/ViewerTable.spec.ts` — a classe `viewer-table__th--selected` continua aplicada/removida corretamente ao mudar `selectedIndex` (caso existente ~linha 148-150 permanece verde); `test/StatsPanel.spec.ts` — trocar `stats`/`label` via re-render, aguardando `nextTick`, não quebra a renderização final do conteúdo.
 
-- [ ] T09 — Feedback animado ao abrir um arquivo
+- [x] T09 — Feedback animado ao abrir um arquivo
       Arquivos: `app/components/Dropzone.vue`, `test/Dropzone.spec.ts`
       Mudança: adicionar `opacity` ao `transition` já existente em `.dropzone` (hoje só `border-color`/`background`), ajustado para 150–300ms; adicionar um indicador visual adicional (ex.: pulso em `.dropzone__icon-wrap` via `@keyframes`) enquanto `disabled` (vinculado a `isOpening`) está ativo; `@media (prefers-reduced-motion: reduce)` desabilita a animação de pulso. Sem mudança de props/eventos.
       Cobre: RF-06 (item a — abrir arquivo via dropzone), RNF-01, RNF-02

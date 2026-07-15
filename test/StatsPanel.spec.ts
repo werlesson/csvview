@@ -151,6 +151,9 @@ describe('StatsPanel', () => {
       label: 'name',
       stats: computeColumnStats(TEXT_VALUES),
     })
+    // `mode="out-in"` (RF-06b/UI-03) só monta o novo conteúdo após a
+    // transição de saída do anterior terminar.
+    await new Promise((resolve) => setTimeout(resolve, 250))
 
     expect(wrapper.find('.stats-panel__title').text()).toBe('name')
     expect(wrapper.find('[data-type]').text()).toBe('texto')

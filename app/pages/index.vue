@@ -49,10 +49,10 @@ async function onReopen(id: number): Promise<void> {
           <span class="upload__seal-dot" aria-hidden="true" />
           100% no navegador · seus dados não saem daqui
         </p>
-        <h1 class="upload__title">Solte um CSV e comece a explorar.</h1>
+        <h1 class="upload__title">O explorador de CSV para quem vive nos dados</h1>
         <p class="upload__subtitle">
-          Arraste um arquivo ou abra uma sessão recente. Tudo é processado
-          localmente, no seu navegador.
+          Abra, filtre e analise arquivos CSV enormes direto no navegador —
+          sem instalar nada e sem enviar seus dados para nenhum servidor.
         </p>
       </header>
 

@@ -39,13 +39,13 @@ function onOpen(id: number): void {
     <h2 class="recents__title">Arquivos recentes</h2>
 
     <ul v-if="files.length > 0" class="recents__list">
-      <li v-for="(file, i) in files" :key="file.id">
+      <li v-for="file in files" :key="file.id">
         <button
           type="button"
           class="recent"
           @click="onOpen(file.id)"
         >
-          <span class="recent__icon" :class="`recent__icon--${i % 3}`" aria-hidden="true">
+          <span class="recent__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
               <path
                 d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"
@@ -137,7 +137,8 @@ function onOpen(id: number): void {
   border-color: var(--border-strong);
 }
 
-/* Ícone de arquivo em quadrado arredondado, com tom variando por posição. */
+/* Ícone de arquivo em quadrado arredondado, sempre na cor primária/accent
+   do tema — independente da posição na lista (RF-05). */
 .recent__icon {
   display: inline-flex;
   align-items: center;
@@ -146,21 +147,8 @@ function onOpen(id: number): void {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-sm);
-}
-
-.recent__icon--0 {
-  color: var(--success);
-  background: var(--success-soft);
-}
-
-.recent__icon--1 {
-  color: var(--info);
-  background: var(--info-soft);
-}
-
-.recent__icon--2 {
-  color: var(--warning);
-  background: var(--warning-soft);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .recent__body {

@@ -65,6 +65,9 @@ describe('Dropdown', () => {
     )
     await wrapper.vm.$nextTick()
 
+    // O fechamento agora passa por uma transição (RF-06c/UI-02); o
+    // `display: none` final só é garantido ao fim do ciclo de transição.
+    await new Promise((resolve) => setTimeout(resolve, 250))
     expect(isHidden(wrapper.get('[role="menu"]'))).toBe(true)
   })
 
@@ -115,8 +118,12 @@ describe('Dropdown', () => {
 
     await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Escape' })
 
-    expect(isHidden(wrapper.get('[role="menu"]'))).toBe(true)
+    // Foco retorna de imediato; o `display: none` só é aplicado ao fim da
+    // transição de saída (RF-06c/UI-02).
     expect(document.activeElement).toBe(wrapper.get('.dropdown__trigger').element)
+
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(isHidden(wrapper.get('[role="menu"]'))).toBe(true)
   })
 
   it('opens with ArrowDown from the trigger', async () => {

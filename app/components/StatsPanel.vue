@@ -94,7 +94,8 @@ function signClass(value: number): string {
 
 <template>
   <aside class="stats-panel" aria-label="Estatísticas da coluna">
-    <div v-if="hasSelection && stats" class="stats-panel__content">
+    <Transition name="stats-fade" mode="out-in">
+    <div v-if="hasSelection && stats" :key="label" class="stats-panel__content">
       <p class="stats-panel__eyebrow">Estatísticas da coluna</p>
 
       <header class="stats-panel__header">
@@ -169,12 +170,13 @@ function signClass(value: number): string {
       </template>
     </div>
 
-    <div v-else class="stats-panel__empty" role="status">
+    <div v-else key="empty" class="stats-panel__empty" role="status">
       <p class="stats-panel__empty-title">Nenhuma coluna selecionada</p>
       <p class="stats-panel__empty-hint">
         Selecione uma coluna na tabela para ver suas estatísticas.
       </p>
     </div>
+    </Transition>
   </aside>
 </template>
 
@@ -205,6 +207,24 @@ function signClass(value: number): string {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Fade curto ao trocar de coluna selecionada (RF-06b, UI-03). */
+.stats-fade-enter-active,
+.stats-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.stats-fade-enter-from,
+.stats-fade-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stats-fade-enter-active,
+  .stats-fade-leave-active {
+    transition-duration: 0s;
+  }
 }
 
 /* Eyebrow — título de seção do painel, em maiúsculas discretas. */

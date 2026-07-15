@@ -151,7 +151,7 @@ function onInputChange(event: Event): void {
   border-radius: var(--radius-lg);
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
 }
 
 .dropzone:hover {
@@ -181,6 +181,29 @@ function onInputChange(event: Event): void {
   color: var(--accent);
   background: var(--accent-soft);
   border-radius: var(--radius-lg);
+}
+
+/* Feedback animado enquanto um arquivo está sendo aberto (RF-06a): pulso
+   perceptível no ícone, além do fade de opacidade em .dropzone--disabled. */
+.dropzone--disabled .dropzone__icon-wrap {
+  animation: dropzone-pulse 0.25s ease-in-out infinite;
+}
+
+@keyframes dropzone-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone--disabled .dropzone__icon-wrap {
+    animation: none;
+  }
 }
 
 .dropzone__title {
