@@ -8,6 +8,11 @@ const props = defineProps<{
    * monoespaçada, mantendo os dígitos tabulares (US-2.1).
    */
   numeric?: boolean
+  /**
+   * Célula da coluna atualmente selecionada (painel de stats aberto): recebe um
+   * leve realce de fundo, alinhado ao destaque do cabeçalho.
+   */
+  selected?: boolean
 }>()
 
 const display = computed(() =>
@@ -25,6 +30,7 @@ const isEmpty = computed(() => display.value === '—')
     :class="[
       isEmpty ? 'csv-cell--empty' : '',
       numeric ? 'csv-cell--numeric' : '',
+      selected ? 'csv-cell--selected' : '',
     ]"
     :title="isEmpty ? undefined : display"
   >
@@ -63,5 +69,10 @@ const isEmpty = computed(() => display.value === '—')
   text-align: right;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* Coluna selecionada (painel de stats aberto): leve realce accent na coluna. */
+.csv-cell--selected {
+  background: var(--accent-soft);
 }
 </style>

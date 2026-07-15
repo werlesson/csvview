@@ -14,7 +14,6 @@ function makeColumns(): ViewerColumn[] {
 function mountToolbar(overrides: Record<string, unknown> = {}) {
   return mount(ViewerToolbar, {
     props: {
-      fileName: 'transactions_2026.csv',
       rowCount: 1_204_882,
       columns: makeColumns(),
       search: '',
@@ -24,9 +23,10 @@ function mountToolbar(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ViewerToolbar', () => {
-  it('exibe o nome do arquivo e o total de linhas formatado', () => {
+  // O nome do arquivo agora fica na barra de título (header do layout), fiel ao
+  // design da Screen 2; a toolbar exibe apenas o contador de linhas.
+  it('exibe o total de linhas formatado', () => {
     const text = mountToolbar().text()
-    expect(text).toContain('transactions_2026.csv')
     expect(text).toContain('1,204,882 linhas')
   })
 

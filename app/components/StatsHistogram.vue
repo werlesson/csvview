@@ -41,6 +41,7 @@ function barLabel(bin: HistogramBin): string {
       v-for="(bin, i) in bins"
       :key="i"
       class="histogram__bar"
+      :class="{ 'histogram__bar--peak': bin.count === maxCount && maxCount > 0 }"
       :style="{ height: barHeight(bin.count) }"
       :title="barLabel(bin)"
       :data-count="bin.count"
@@ -61,7 +62,13 @@ function barLabel(bin: HistogramBin): string {
   flex: 1;
   min-width: 2px;
   background: var(--accent);
+  opacity: 0.55;
   border-radius: 2px 2px 0 0;
   transition: height 0.15s ease;
+}
+
+/* Barra mais alta em destaque, como no design. */
+.histogram__bar--peak {
+  opacity: 1;
 }
 </style>

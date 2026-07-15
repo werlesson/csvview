@@ -89,34 +89,35 @@ function onInputChange(event: Event): void {
     @keydown.enter.prevent="onPick"
     @keydown.space.prevent="onPick"
   >
-    <svg
-      class="dropzone__icon"
-      viewBox="0 0 24 24"
-      width="32"
-      height="32"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M12 15V4m0 0L8 8m4-4 4 4"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-      <path
-        d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
+    <span class="dropzone__icon-wrap" aria-hidden="true">
+      <svg
+        class="dropzone__icon"
+        viewBox="0 0 24 24"
+        width="24"
+        height="24"
+        focusable="false"
+      >
+        <path
+          d="M12 15V4m0 0L8 8m4-4 4 4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </span>
 
     <p class="dropzone__title">Arraste um arquivo CSV aqui</p>
-    <p class="dropzone__hint">ou selecione</p>
+    <p class="dropzone__hint">ou selecione <span class="dropzone__formats">.csv · .tsv · .txt</span></p>
 
     <button
       type="button"
@@ -126,8 +127,6 @@ function onInputChange(event: Event): void {
     >
       Escolher arquivo
     </button>
-
-    <p class="dropzone__formats">Formatos aceitos: .csv · .tsv · .txt</p>
 
     <input
       ref="inputRef"
@@ -145,8 +144,8 @@ function onInputChange(event: Event): void {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 44px 24px;
+  gap: 8px;
+  padding: 48px 24px;
   background: var(--bg-1);
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-lg);
@@ -171,8 +170,17 @@ function onInputChange(event: Event): void {
   pointer-events: none;
 }
 
-.dropzone__icon {
+/* Ícone dentro de um quadrado arredondado accent-soft, fiel ao design. */
+.dropzone__icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
   color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-lg);
 }
 
 .dropzone__title {
@@ -183,7 +191,12 @@ function onInputChange(event: Event): void {
 
 .dropzone__hint {
   font-size: 14px;
-  color: var(--text-2);
+  color: var(--text-3);
+}
+
+.dropzone__formats {
+  font-family: var(--mono);
+  color: var(--text-3);
 }
 
 .dropzone__button {
@@ -210,13 +223,6 @@ function onInputChange(event: Event): void {
 .dropzone__button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.dropzone__formats {
-  margin-top: 4px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  color: var(--text-3);
 }
 
 .dropzone__input {

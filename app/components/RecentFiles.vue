@@ -36,23 +36,44 @@ function onOpen(id: number): void {
 
 <template>
   <section class="recents" aria-label="Arquivos recentes">
-    <h2 class="recents__title">Recentes</h2>
+    <h2 class="recents__title">Arquivos recentes</h2>
 
     <ul v-if="files.length > 0" class="recents__list">
-      <li v-for="file in files" :key="file.id">
+      <li v-for="(file, i) in files" :key="file.id">
         <button
           type="button"
           class="recent"
           @click="onOpen(file.id)"
         >
-          <span class="recent__name">{{ file.name }}</span>
-          <span class="recent__meta">
-            <span class="recent__rows">{{ formatRowCount(file.row_count) }} linhas</span>
-            <span class="recent__sep" aria-hidden="true">·</span>
-            <span class="recent__size">{{ formatBytes(file.size_bytes) }}</span>
-            <span class="recent__sep" aria-hidden="true">·</span>
-            <span class="recent__time">{{ formatRelativeTime(file.last_opened_at) }}</span>
+          <span class="recent__icon" :class="`recent__icon--${i % 3}`" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" focusable="false">
+              <path
+                d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M14 3v5h5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linejoin="round"
+              />
+            </svg>
           </span>
+
+          <span class="recent__body">
+            <span class="recent__name">{{ file.name }}</span>
+            <span class="recent__meta">
+              <span class="recent__rows">{{ formatRowCount(file.row_count) }} linhas</span>
+              <span class="recent__sep" aria-hidden="true">·</span>
+              <span class="recent__size">{{ formatBytes(file.size_bytes) }}</span>
+            </span>
+          </span>
+
+          <span class="recent__time">{{ formatRelativeTime(file.last_opened_at) }}</span>
         </button>
       </li>
     </ul>
@@ -74,15 +95,17 @@ function onOpen(id: number): void {
 }
 
 .recents__title {
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--text-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .recents__list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -90,8 +113,8 @@ function onOpen(id: number): void {
 
 .recent {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 12px;
   width: 100%;
   padding: 12px 14px;
   text-align: left;
@@ -107,18 +130,63 @@ function onOpen(id: number): void {
   border-color: var(--border-strong);
 }
 
+/* Ícone de arquivo em quadrado arredondado, com tom variando por posição. */
+.recent__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+}
+
+.recent__icon--0 {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.recent__icon--1 {
+  color: var(--info);
+  background: var(--info-soft);
+}
+
+.recent__icon--2 {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.recent__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
 .recent__name {
-  font-family: var(--mono);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent__meta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.recent__time {
+  flex: none;
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 12px;
   color: var(--text-3);
 }
 
