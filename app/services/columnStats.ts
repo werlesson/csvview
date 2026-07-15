@@ -216,6 +216,62 @@ export function isUrlValue(value: Cell): boolean {
 }
 
 /**
+ * Compara duas células já reconhecidas como preenchidas segundo o tipo
+ * inferido da coluna, retornando `-1`/`0`/`1` em ordem ascendente:
+ * `number` por valor numérico (`parseNumber`), `date` cronologicamente
+ * (`parseDate`, T01) e `text` lexicograficamente (`localeCompare`). Quando um
+ * valor não converte no ramo numérico/data (não deveria ocorrer numa coluna do
+ * tipo, mas é possível em dados sujos), o ramo recai em comparação textual
+ * determinística, mantendo o comparador total e estável.
+ */
+function compareFilled(type: ColumnType, a: string, b: string): number {
+  if (type === 'number') {
+    const na = parseNumber(a)
+    const nb = parseNumber(b)
+    if (na !== null && nb !== null) {
+      return na < nb ? -1 : na > nb ? 1 : 0
+    }
+  } else if (type === 'date') {
+    const da = parseDate(a)
+    const db = parseDate(b)
+    if (da !== null && db !== null) {
+      return da < db ? -1 : da > db ? 1 : 0
+    }
+  }
+  return a.localeCompare(b)
+}
+
+/**
+ * Constrói um comparador PURO para ordenar células de uma coluna respeitando o
+ * seu tipo inferido (RF-03). Regras:
+ *
+ * - Células vazias (`isEmptyCell`: `null`/`undefined`/`''` após aparar) ficam
+ *   SEMPRE ao final, independentemente da direção `asc`/`desc` — a direção só
+ *   inverte a ordem entre as células preenchidas, nunca empurra vazios ao topo.
+ * - `number` compara por valor numérico (`2 < 10 < 100`, não como texto);
+ *   `date` cronologicamente (`parseDate`, DMY para ambíguos); `text` por
+ *   `localeCompare`.
+ * - Empates retornam `0`: a estabilidade do `Array.prototype.sort` do V8
+ *   preserva a ordem original, viabilizando a ordenação multi-chave incremental.
+ */
+export function makeComparator(
+  type: ColumnType,
+  direction: 'asc' | 'desc',
+): (a: Cell, b: Cell) => number {
+  const sign = direction === 'desc' ? -1 : 1
+
+  return (a, b) => {
+    const aEmpty = isEmptyCell(a)
+    const bEmpty = isEmptyCell(b)
+    if (aEmpty || bEmpty) {
+      if (aEmpty && bEmpty) return 0
+      return aEmpty ? 1 : -1 // vazios ao fim em qualquer direção
+    }
+    return sign * compareFilled(type, String(a).trim(), String(b).trim())
+  }
+}
+
+/**
  * Ponto único de decisão inteiro/decimal, compartilhado entre inferência e
  * métricas: `'decimal'` se algum valor não for inteiro (`Number.isInteger`),
  * caso contrário `'integer'`. A distinção é pelo valor numérico, não pelo

@@ -8,6 +8,7 @@ import {
   isBooleanValue,
   isEmailValue,
   isUrlValue,
+  makeComparator,
   numericKindOf,
   parseDate,
   parseNumber,
@@ -116,6 +117,76 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       expect(parseDate(undefined)).toBeNull()
       expect(parseDate('foo')).toBeNull()
       expect(parseDate('42')).toBeNull()
+    })
+  })
+
+  describe('makeComparator', () => {
+    it('number ordena por valor (2 < 10 < 100), não como texto', () => {
+      const asc = makeComparator('number', 'asc')
+      const values = ['100', '2', '10']
+      expect([...values].sort(asc)).toEqual(['2', '10', '100'])
+      // Como texto, '10' < '100' < '2' — garante que NÃO é comparação textual.
+      expect(asc('2', '10')).toBeLessThan(0)
+      expect(asc('10', '100')).toBeLessThan(0)
+
+      const desc = makeComparator('number', 'desc')
+      expect([...values].sort(desc)).toEqual(['100', '10', '2'])
+    })
+
+    it('date ordena cronologicamente (2026-01-02 antes de 2026-01-10)', () => {
+      const asc = makeComparator('date', 'asc')
+      const values = ['2026-01-10', '2026-01-02', '2026-01-05']
+      expect([...values].sort(asc)).toEqual([
+        '2026-01-02',
+        '2026-01-05',
+        '2026-01-10',
+      ])
+      expect(asc('2026-01-02', '2026-01-10')).toBeLessThan(0)
+
+      const desc = makeComparator('date', 'desc')
+      expect([...values].sort(desc)).toEqual([
+        '2026-01-10',
+        '2026-01-05',
+        '2026-01-02',
+      ])
+    })
+
+    it('date ambíguo usa DMY: 03/02/2026 (3 fev) antes de 10/02/2026', () => {
+      const asc = makeComparator('date', 'asc')
+      expect(asc('03/02/2026', '10/02/2026')).toBeLessThan(0)
+    })
+
+    it('text ordena lexicograficamente e é estável em empates', () => {
+      const asc = makeComparator('text', 'asc')
+      expect(['banana', 'abacaxi', 'caju'].sort(asc)).toEqual([
+        'abacaxi',
+        'banana',
+        'caju',
+      ])
+      // Empate → 0: preserva a ordem original (sort estável do V8).
+      expect(asc('igual', 'igual')).toBe(0)
+    })
+
+    it('vazios ficam ao fim em asc e em desc (qualquer tipo)', () => {
+      for (const type of ['number', 'date', 'text'] as const) {
+        const filled = type === 'number' ? ['2', '10'] : ['2026-01-02', '2026-01-10']
+        const withEmpties = [filled[0]!, '', filled[1]!, null, undefined]
+
+        const asc = [...withEmpties].sort(makeComparator(type, 'asc'))
+        expect(asc.slice(0, 2)).toEqual(filled)
+        expect(asc.slice(2).every((v) => v === '' || v == null)).toBe(true)
+
+        const desc = [...withEmpties].sort(makeComparator(type, 'desc'))
+        expect(desc.slice(0, 2)).toEqual([filled[1], filled[0]])
+        expect(desc.slice(2).every((v) => v === '' || v == null)).toBe(true)
+      }
+    })
+
+    it('vazios entre si empatam em 0 (ordem preservada)', () => {
+      const cmp = makeComparator('text', 'asc')
+      expect(cmp('', null)).toBe(0)
+      expect(cmp(undefined, '')).toBe(0)
+      expect(cmp('   ', null)).toBe(0)
     })
   })
 
