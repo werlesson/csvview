@@ -153,6 +153,41 @@ export function isDateValue(value: Cell): boolean {
 }
 
 /**
+ * Converte uma célula-data em um valor numérico comparável (timestamp UTC em
+ * milissegundos), ou `null` para célula vazia ou não reconhecida como data.
+ *
+ * Reusa os mesmos regexes de `isDateValue`: o formato ISO (`DATE_ISO_RE`) é
+ * interpretado como ano/mês/dia; o ramo ambíguo `DD..MM..YYYY` (`DATE_DMY_RE`)
+ * assume sempre a convenção pt-BR **dia/mês/ano (DMY)** para a coluna inteira,
+ * sem detecção de ordem dominante (RF-03). A hora eventual do ISO é ignorada:
+ * a comparação é por data. Determinístico e independente de locale.
+ */
+export function parseDate(value: Cell): number | null {
+  if (isEmptyCell(value)) return null
+  const text = String(value).trim()
+
+  const iso = DATE_ISO_RE.exec(text)
+  if (iso) {
+    const year = Number(iso[1])
+    const month = Number(iso[2])
+    const day = Number(iso[3])
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    return Date.UTC(year, month - 1, day)
+  }
+
+  const dmy = DATE_DMY_RE.exec(text)
+  if (dmy) {
+    const day = Number(dmy[1])
+    const month = Number(dmy[2])
+    const year = Number(dmy[3])
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    return Date.UTC(year, month - 1, day)
+  }
+
+  return null
+}
+
+/**
  * Reconhece um valor booleano por token da allowlist case-insensitive
  * `{ true, false, sim, não, yes, no }`. `0`/`1` NÃO são booleano — permanecem
  * número (número precede booleano na inferência). Determinístico, sem locale.

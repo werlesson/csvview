@@ -9,6 +9,7 @@ import {
   isEmailValue,
   isUrlValue,
   numericKindOf,
+  parseDate,
   parseNumber,
 } from '~/services/columnStats'
 
@@ -82,6 +83,39 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       expect(numericKindOf(['1', '2.5'].map((v) => parseNumber(v)!))).toBe(
         'decimal',
       )
+    })
+  })
+
+  describe('parseDate', () => {
+    it('ISO ordenável: converte para valor comparável na ordem cronológica', () => {
+      const early = parseDate('2026-01-02')
+      const late = parseDate('2026-01-10')
+      expect(early).not.toBeNull()
+      expect(late).not.toBeNull()
+      expect(early! < late!).toBe(true)
+      // Também através dos separadores `/` e `.` do formato ISO.
+      expect(parseDate('2026/01/02')).toBe(parseDate('2026-01-02'))
+      expect(parseDate('2026.01.02')).toBe(parseDate('2026-01-02'))
+      // A hora do ISO é ignorada: a comparação é por data.
+      expect(parseDate('2026-01-02T10:30:00')).toBe(parseDate('2026-01-02'))
+    })
+
+    it('DMY para ambíguo: 03/02/2026 é 3 de fevereiro (dia/mês/ano), não 2 de março', () => {
+      // 3 de fevereiro de 2026, convenção pt-BR dia/mês/ano.
+      expect(parseDate('03/02/2026')).toBe(Date.UTC(2026, 1, 3))
+      // Não é 2 de março (interpretação MDY seria mês/dia/ano).
+      expect(parseDate('03/02/2026')).not.toBe(Date.UTC(2026, 2, 2))
+      // Ordena cronologicamente respeitando DMY.
+      expect(parseDate('03/02/2026')! < parseDate('10/02/2026')!).toBe(true)
+    })
+
+    it('null para vazio/não-data', () => {
+      expect(parseDate('')).toBeNull()
+      expect(parseDate('   ')).toBeNull()
+      expect(parseDate(null)).toBeNull()
+      expect(parseDate(undefined)).toBeNull()
+      expect(parseDate('foo')).toBeNull()
+      expect(parseDate('42')).toBeNull()
     })
   })
 
