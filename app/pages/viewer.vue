@@ -38,6 +38,7 @@ const {
   sortColumn,
   sortColumnAdditive,
   resizeColumn,
+  columnWidth,
   reorderColumn,
   togglePin,
   displayColumns,
