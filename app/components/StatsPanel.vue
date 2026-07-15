@@ -143,13 +143,26 @@ function signClass(value: number): string {
 </template>
 
 <style scoped>
+/* Parte da superfície unificada do Viewer: colado à direita da tabela, separado
+   só por uma linha de 1px (sem card/raio próprios). Preenche a altura e rola
+   internamente se as estatísticas passarem do espaço disponível. */
 .stats-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
   background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-left: 1px solid var(--border);
   padding: 16px;
+}
+
+/* Empilhado em telas estreitas: o divisor passa para o topo. */
+@media (max-width: 900px) {
+  .stats-panel {
+    height: auto;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 .stats-panel__content {

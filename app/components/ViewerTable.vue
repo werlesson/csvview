@@ -138,12 +138,11 @@ const isEmpty = computed(() => props.rows.length === 0)
      mantendo cabeçalho e células alinhados mesmo com estilos scoped. */
   --col-w: 180px;
   position: relative;
-  height: 70vh;
-  min-height: 320px;
+  /* Sem card próprio: a tabela é parte da superfície unificada do Viewer e
+     preenche a altura do body. Esta é a única área de scroll da tela. */
+  height: 100%;
   overflow: auto;
   background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
 }
 
 .viewer-table__grid {
@@ -153,6 +152,12 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 .viewer-table__head {
+  /* `display: block` (como o tbody) para que o `min-width: 100%` da linha do
+     cabeçalho resolva contra a mesma largura do scroller que as linhas do corpo.
+     Sem isso, o thead (table-header-group) encolhe para a largura natural e, com
+     a grade esticada (poucas colunas), as colunas do cabeçalho desalinham das do
+     corpo. */
+  display: block;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -195,6 +200,8 @@ const isEmpty = computed(() => props.rows.length === 0)
   text-transform: uppercase;
   color: var(--text-3);
   border-bottom: 1px solid var(--border);
+  /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
+  border-right: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -206,10 +213,14 @@ const isEmpty = computed(() => props.rows.length === 0)
   font-family: var(--mono);
 }
 
-/* Coluna selecionada: destaque do cabeçalho enquanto o painel de stats está aberto. */
+/* Coluna selecionada: destaque do cabeçalho enquanto o painel de stats está
+   aberto. Faixa accent (borda inferior + laterais) para virar uma coluna
+   realçada de ponta a ponta, fiel ao design. */
 .viewer-table__th--selected {
   background: var(--accent-soft);
   box-shadow: inset 0 -2px 0 var(--accent);
+  border-right-color: var(--accent);
+  border-left: 1px solid var(--accent);
 }
 
 .viewer-table__th--selected .viewer-table__th-label {

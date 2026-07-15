@@ -63,22 +63,49 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 </template>
 
 <style scoped>
+/* Superfície única do Viewer (fiel à Screen 2): toolbar no topo e, abaixo,
+   tabela + painel de stats colados — separados só por linhas de 1px, sem gaps.
+   O card preenche a altura disponível (`.app-content` é flex full-height) e o
+   scroll fica confinado à área da tabela. */
 .viewer {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
 .viewer__body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 16px;
-  align-items: start;
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
+/* A tabela ocupa o espaço restante; o painel tem largura fixa e um divisor à
+   esquerda (o próprio painel desenha a borda — ver StatsPanel). Estilizamos as
+   raízes dos componentes filhos: em CSS scoped, o Vue aplica o escopo do pai à
+   raiz do filho, então `.viewer-table`/`.stats-panel` são alcançáveis daqui. */
+.viewer__body > .viewer-table {
+  flex: 1;
+  min-width: 0;
+}
+
+.viewer__body > .stats-panel {
+  flex: none;
+  width: 320px;
+}
+
+/* Empilha em telas estreitas: o divisor do painel vira borda superior. */
 @media (max-width: 900px) {
   .viewer__body {
-    grid-template-columns: minmax(0, 1fr);
+    flex-direction: column;
+  }
+
+  .viewer__body > .stats-panel {
+    width: auto;
   }
 }
 </style>

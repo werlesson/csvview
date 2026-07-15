@@ -89,6 +89,8 @@ function onToggle(index: number): void {
 </template>
 
 <style scoped>
+/* Faixa de topo da superfície do Viewer: colada ao topo do card, separada da
+   tabela apenas por uma linha de 1px (sem borda/raio próprios). */
 .toolbar {
   display: flex;
   align-items: center;
@@ -96,8 +98,7 @@ function onToggle(index: number): void {
   gap: 16px;
   padding: 12px 16px;
   background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-bottom: 1px solid var(--border);
 }
 
 .toolbar__controls {

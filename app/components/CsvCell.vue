@@ -52,6 +52,8 @@ const isEmpty = computed(() => display.value === '—')
   font-size: 13px;
   color: var(--text);
   border-bottom: 1px solid var(--border);
+  /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
+  border-right: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -71,8 +73,11 @@ const isEmpty = computed(() => display.value === '—')
   font-variant-numeric: tabular-nums;
 }
 
-/* Coluna selecionada (painel de stats aberto): leve realce accent na coluna. */
+/* Coluna selecionada (painel de stats aberto): faixa accent na coluna, alinhada
+   ao destaque do cabeçalho. */
 .csv-cell--selected {
   background: var(--accent-soft);
+  border-right-color: var(--accent);
+  border-left: 1px solid var(--accent);
 }
 </style>
