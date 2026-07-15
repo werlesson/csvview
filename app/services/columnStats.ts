@@ -3,17 +3,23 @@
  *
  * Opera sobre o dataset já parseado (Fase 4): recebe os valores de uma coluna
  * (sempre strings, como o parser devolve) e produz o tipo inferido
- * (`number` | `date` | `text`), as métricas gerais (nulos, únicos, duplicados,
- * preenchido) e — apenas para colunas numéricas — as métricas de mínimo,
- * máximo, média e a distribuição em histograma.
+ * (`number` | `date` | `boolean` | `email` | `url` | `text`), as métricas
+ * gerais (nulos, únicos, duplicados, preenchido) e — apenas para colunas
+ * numéricas — as métricas de mínimo, máximo, média, soma, mediana, a
+ * distinção inteiro/decimal (`numericKind`) e a distribuição em histograma.
  *
  * Toda a lógica é pura e client-side: nenhum dado sai da máquina (US-3.1).
  *
  * Referência: `.spec/init/project-phases.md` (Fase 5); US-3.1.
  */
 
-/** Tipo inferido de uma coluna. Espelha os rótulos exibidos no painel de stats. */
-export type ColumnType = 'number' | 'date' | 'text'
+/**
+ * Tipo inferido de uma coluna. Espelha os rótulos exibidos no painel de stats.
+ *
+ * Inteiro e decimal NÃO são membros deste tipo: colunas numéricas permanecem
+ * `'number'` e a distinção inteiro/decimal vive em `NumericStats.numericKind`.
+ */
+export type ColumnType = 'number' | 'date' | 'boolean' | 'email' | 'url' | 'text'
 
 /** Um bin (faixa) do histograma de distribuição de uma coluna numérica. */
 export interface HistogramBin {
@@ -33,13 +39,26 @@ export interface NumericStats {
   max: number
   /** Média aritmética dos valores não-nulos. */
   mean: number
+  /** Soma de todos os valores não-nulos. */
+  sum: number
+  /**
+   * Mediana dos valores não-nulos: valor central da lista ordenada; média dos
+   * dois centrais quando a contagem é par.
+   */
+  median: number
+  /**
+   * Distinção inteiro/decimal derivada do valor numérico (`Number.isInteger`):
+   * `'integer'` quando todos os valores são inteiros; `'decimal'` quando ao
+   * menos um não é. Não altera `ColumnType`, que permanece `'number'`.
+   */
+  numericKind: 'integer' | 'decimal'
   /** Distribuição em bins; a soma dos `count` é o total de valores não-nulos. */
   histogram: HistogramBin[]
 }
 
 /** Estatísticas completas de uma coluna. */
 export interface ColumnStats {
-  /** Tipo inferido: `number` | `date` | `text`. */
+  /** Tipo inferido: `number` | `date` | `boolean` | `email` | `url` | `text`. */
   type: ColumnType
   /** Nº de células vazias (`null`/`undefined`/`''`). */
   nulls: number
@@ -80,6 +99,23 @@ export function parseNumber(value: Cell): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+// Tokens booleanos reconhecidos (case-insensitive). `0`/`1` NÃO são booleano:
+// permanecem número, que precede booleano na ordem de inferência.
+const BOOLEAN_TOKENS: ReadonlySet<string> = new Set([
+  'true',
+  'false',
+  'sim',
+  'não',
+  'yes',
+  'no',
+])
+
+// E-mail conservador: um `@`, um `.` no domínio, sem espaços em nenhum lado.
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
+// URL: apenas os esquemas `http://` e `https://`.
+const URL_RE = /^https?:\/\/\S+$/i
+
 // `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, com hora opcional (ISO).
 const DATE_ISO_RE =
   /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
@@ -117,29 +153,87 @@ export function isDateValue(value: Cell): boolean {
 }
 
 /**
+ * Reconhece um valor booleano por token da allowlist case-insensitive
+ * `{ true, false, sim, não, yes, no }`. `0`/`1` NÃO são booleano — permanecem
+ * número (número precede booleano na inferência). Determinístico, sem locale.
+ */
+export function isBooleanValue(value: Cell): boolean {
+  if (isEmptyCell(value)) return false
+  return BOOLEAN_TOKENS.has(String(value).trim().toLowerCase())
+}
+
+/**
+ * Reconhece um e-mail de forma conservadora (`^[^@\s]+@[^@\s]+\.[^@\s]+$`):
+ * exige exatamente um `@` cercado por partes sem espaço e um `.` no domínio.
+ */
+export function isEmailValue(value: Cell): boolean {
+  if (isEmptyCell(value)) return false
+  return EMAIL_RE.test(String(value).trim())
+}
+
+/**
+ * Reconhece uma URL apenas quando o esquema é `http://` ou `https://`.
+ * Outros esquemas (ex.: `ftp://`, `mailto:`) são rejeitados.
+ */
+export function isUrlValue(value: Cell): boolean {
+  if (isEmptyCell(value)) return false
+  return URL_RE.test(String(value).trim())
+}
+
+/**
+ * Ponto único de decisão inteiro/decimal, compartilhado entre inferência e
+ * métricas: `'decimal'` se algum valor não for inteiro (`Number.isInteger`),
+ * caso contrário `'integer'`. A distinção é pelo valor numérico, não pelo
+ * texto: `1.0`, `5.00` e `2e3` são inteiros.
+ */
+export function numericKindOf(
+  numbers: readonly number[],
+): 'integer' | 'decimal' {
+  return numbers.some((n) => !Number.isInteger(n)) ? 'decimal' : 'integer'
+}
+
+/**
  * Infere o tipo dominante de uma coluna a partir das células não vazias
- * (as vazias são ignoradas e não invalidam a inferência):
- * - toda célula preenchida é número → `number`;
- * - senão, toda célula preenchida é data → `date`;
- * - caso contrário → `text`.
- * Uma coluna sem nenhuma célula preenchida é `text`.
+ * (as vazias são ignoradas via `isEmptyCell` e não invalidam a inferência).
+ *
+ * A avaliação é **por coluna**, em uma única passagem O(N): a coluna assume o
+ * primeiro tipo cujo conjunto completo de células preenchidas é satisfeito, na
+ * ordem de precedência determinística:
+ *
+ *   número → data → booleano → e-mail → URL → texto (fallback terminal)
+ *
+ * Assim, quando todas as células satisfazem mais de um tipo, vence sempre o
+ * primeiro da sequência (ex.: `0`/`1` → número, não booleano). Inteiro/decimal
+ * NÃO são retornados aqui: colunas numéricas são `'number'` e a distinção vive
+ * em `NumericStats.numericKind`. Uma coluna sem célula preenchida é `text`.
  */
 export function inferColumnType(values: readonly Cell[]): ColumnType {
   let hasFilled = false
   let allNumbers = true
   let allDates = true
+  let allBooleans = true
+  let allEmails = true
+  let allUrls = true
 
   for (const value of values) {
     if (isEmptyCell(value)) continue
     hasFilled = true
-    if (parseNumber(value) === null) allNumbers = false
-    if (!isDateValue(value)) allDates = false
-    if (!allNumbers && !allDates) break
+    if (allNumbers && parseNumber(value) === null) allNumbers = false
+    if (allDates && !isDateValue(value)) allDates = false
+    if (allBooleans && !isBooleanValue(value)) allBooleans = false
+    if (allEmails && !isEmailValue(value)) allEmails = false
+    if (allUrls && !isUrlValue(value)) allUrls = false
+    if (!allNumbers && !allDates && !allBooleans && !allEmails && !allUrls) {
+      break
+    }
   }
 
   if (!hasFilled) return 'text'
   if (allNumbers) return 'number'
   if (allDates) return 'date'
+  if (allBooleans) return 'boolean'
+  if (allEmails) return 'email'
+  if (allUrls) return 'url'
   return 'text'
 }
 
@@ -193,7 +287,14 @@ export function buildHistogram(values: readonly number[]): HistogramBin[] {
   return bins
 }
 
-/** Calcula min/max/média e o histograma de uma lista de valores numéricos. */
+/**
+ * Calcula min/max/média/soma/mediana, a distinção inteiro/decimal
+ * (`numericKind`) e o histograma de uma lista de valores numéricos.
+ *
+ * A mediana é a única operação super-linear introduzida: ordena uma cópia dos
+ * valores (O(N log N)) e toma o valor central (média dos dois centrais quando
+ * a contagem é par). As demais métricas continuam em uma passagem O(N).
+ */
 function computeNumericStats(values: number[]): NumericStats {
   let min = values[0]!
   let max = values[0]!
@@ -203,10 +304,21 @@ function computeNumericStats(values: number[]): NumericStats {
     if (v > max) max = v
     sum += v
   }
+
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  const median =
+    sorted.length % 2 === 0
+      ? (sorted[mid - 1]! + sorted[mid]!) / 2
+      : sorted[mid]!
+
   return {
     min,
     max,
     mean: sum / values.length,
+    sum,
+    median,
+    numericKind: numericKindOf(values),
     histogram: buildHistogram(values),
   }
 }

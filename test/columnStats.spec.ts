@@ -5,6 +5,11 @@ import {
   computeDatasetStats,
   histogramBinCount,
   inferColumnType,
+  isBooleanValue,
+  isEmailValue,
+  isUrlValue,
+  numericKindOf,
+  parseNumber,
 } from '~/services/columnStats'
 
 describe('inferência de tipo e estatísticas de coluna', () => {
@@ -32,6 +37,91 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       expect(
         inferColumnType(['2020-01-01T10:30:00', '', '2021-06-15 08:00']),
       ).toBe('date')
+    })
+  })
+
+  describe('recognizers', () => {
+    it('isBooleanValue aceita a allowlist case-insensitive e rejeita 0/1', () => {
+      for (const token of ['true', 'FALSE', 'Sim', 'não', 'NÃO', 'yes', 'No']) {
+        expect(isBooleanValue(token)).toBe(true)
+      }
+      expect(isBooleanValue('0')).toBe(false)
+      expect(isBooleanValue('1')).toBe(false)
+      expect(isBooleanValue('maybe')).toBe(false)
+      expect(isBooleanValue('')).toBe(false)
+      expect(isBooleanValue(null)).toBe(false)
+    })
+
+    it('isEmailValue aceita e-mail simples e rejeita espaço/sem domínio', () => {
+      expect(isEmailValue('a@b.com')).toBe(true)
+      expect(isEmailValue('user.name@sub.dominio.org')).toBe(true)
+      expect(isEmailValue('a @b.com')).toBe(false)
+      expect(isEmailValue('a@b .com')).toBe(false)
+      expect(isEmailValue('a@bcom')).toBe(false)
+      expect(isEmailValue('@b.com')).toBe(false)
+      expect(isEmailValue('a@@b.com')).toBe(false)
+    })
+
+    it('isUrlValue aceita apenas http/https e rejeita ftp e outros', () => {
+      expect(isUrlValue('http://x.io')).toBe(true)
+      expect(isUrlValue('https://y.io/path?q=1')).toBe(true)
+      expect(isUrlValue('HTTPS://Z.IO')).toBe(true)
+      expect(isUrlValue('ftp://x.io')).toBe(false)
+      expect(isUrlValue('mailto:a@b.com')).toBe(false)
+      expect(isUrlValue('x.io')).toBe(false)
+      expect(isUrlValue('http:// x.io')).toBe(false)
+    })
+
+    it('numericKindOf distingue inteiro de decimal pelo valor', () => {
+      expect(numericKindOf([1, 2, -3])).toBe('integer')
+      expect(numericKindOf([1, 2.5])).toBe('decimal')
+      expect(numericKindOf([0])).toBe('integer')
+      // "1.0"/"5.00"/"2e3" viram inteiros por valor após o parse.
+      const parsed = ['1.0', '5.00', '2e3'].map((v) => parseNumber(v)!)
+      expect(numericKindOf(parsed)).toBe('integer')
+      expect(numericKindOf(['1', '2.5'].map((v) => parseNumber(v)!))).toBe(
+        'decimal',
+      )
+    })
+  })
+
+  describe('infer-boolean-email-url', () => {
+    it('coluna só de e-mails é inferida como email', () => {
+      expect(inferColumnType(['a@b.com', 'c@d.org'])).toBe('email')
+    })
+
+    it('coluna só de URLs http/https é inferida como url', () => {
+      expect(inferColumnType(['https://x.io', 'http://y.io/p'])).toBe('url')
+    })
+
+    it('coluna só de tokens booleanos é inferida como boolean', () => {
+      expect(inferColumnType(['true', 'false', 'Sim', 'não'])).toBe('boolean')
+      expect(inferColumnType(['yes', 'no'])).toBe('boolean')
+    })
+
+    it('0/1 são número, não booleano (número precede booleano)', () => {
+      expect(inferColumnType(['0', '1', '1', '0'])).toBe('number')
+    })
+  })
+
+  describe('infer-precedence', () => {
+    it('a precedência é determinística: mesmo input, mesmo tipo', () => {
+      const values = ['a@b.com', 'c@d.org']
+      expect(inferColumnType(values)).toBe(inferColumnType(values))
+      const nums = ['1', '2', '', '3']
+      expect(inferColumnType(nums)).toBe('number')
+      expect(inferColumnType(nums)).toBe(inferColumnType(nums))
+    })
+
+    it('células vazias são ignoradas na precedência', () => {
+      expect(inferColumnType(['1', '2', '', '3'])).toBe('number')
+      expect(inferColumnType(['a@b.com', '', 'c@d.org'])).toBe('email')
+      expect(inferColumnType(['', ''])).toBe('text')
+    })
+
+    it('mistura de tipos reconhecíveis cai em text', () => {
+      expect(inferColumnType(['a@b.com', 'https://x.io'])).toBe('text')
+      expect(inferColumnType(['true', 'a@b.com'])).toBe('text')
     })
   })
 
@@ -89,6 +179,41 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       const dates = computeColumnStats(['2020-01-01', '2021-01-01'])
       expect(dates.type).toBe('date')
       expect(dates.numeric).toBeUndefined()
+    })
+  })
+
+  describe('stats-numeric-sum-median-kind', () => {
+    it('soma e mediana para contagem par', () => {
+      const stats = computeColumnStats(['1', '2', '3', '4'])
+      expect(stats.numeric?.sum).toBe(10)
+      expect(stats.numeric?.median).toBe(2.5)
+    })
+
+    it('soma e mediana para contagem ímpar (independe da ordem)', () => {
+      const stats = computeColumnStats(['5', '1', '3'])
+      expect(stats.numeric?.sum).toBe(9)
+      expect(stats.numeric?.median).toBe(3)
+    })
+
+    it('numericKind distingue inteiro de decimal na coluna', () => {
+      expect(computeColumnStats(['1', '2', '-3']).numeric?.numericKind).toBe(
+        'integer',
+      )
+      expect(computeColumnStats(['1', '2.5', '3']).numeric?.numericKind).toBe(
+        'decimal',
+      )
+      // "1.0"/"5.00"/"2e3" são inteiros por valor.
+      expect(
+        computeColumnStats(['1.0', '5.00', '2e3']).numeric?.numericKind,
+      ).toBe('integer')
+    })
+
+    it('min/max/média/histograma permanecem idênticos após a extensão', () => {
+      const stats = computeColumnStats(['10', '20', '30'])
+      expect(stats.numeric?.min).toBe(10)
+      expect(stats.numeric?.max).toBe(30)
+      expect(stats.numeric?.mean).toBeCloseTo(20)
+      expect(stats.numeric?.histogram).toEqual(buildHistogram([10, 20, 30]))
     })
   })
 
