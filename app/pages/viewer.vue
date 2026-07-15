@@ -27,7 +27,9 @@ if (!hasDataset.value) {
 }
 
 // Título da aba com o nome do arquivo (mesmo padrão do brand__file no header).
-useHead({ title: computed(() => meta.value?.name ?? 'Viewer') })
+useHead({
+  title: computed(() => `CSV View | ${meta.value?.name ?? 'Viewer'}`),
+})
 
 const {
   search,

@@ -16,12 +16,10 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      // Título padrão (tela de Upload) e sufixo de marca nas demais telas
-      // (ex.: Viewer define `useHead({ title: nomeDoArquivo })`).
-      titleTemplate: (titleChunk) =>
-        titleChunk
-          ? `${titleChunk} · csvview.app`
-          : 'csvview.app — Explorador de CSV no navegador',
+      // Título padrão (tela de Upload). O prefixo de marca nas demais telas
+      // é montado no próprio `useHead` da página (ex.: Viewer), já que um
+      // `titleTemplate` aplicaria o prefixo até neste título default.
+      title: 'CSV View',
     },
   },
 

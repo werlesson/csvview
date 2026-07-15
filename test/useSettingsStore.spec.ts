@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { closeDatabase, deleteDatabase } from '~/composables/useDatabase'
-import { DEFAULT_THEME, THEME_KEY, useSettingsStore } from '~/composables/useSettingsStore'
+import { THEME_KEY, useSettingsStore } from '~/composables/useSettingsStore'
+import { DEFAULT_THEME } from '~/composables/useTheme'
 
 describe('settings store', () => {
   beforeEach(async () => {

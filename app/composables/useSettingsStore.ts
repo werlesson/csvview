@@ -3,6 +3,7 @@ import {
   SETTINGS_STORE,
   type SettingRecord,
 } from '~/composables/useDatabase'
+import { DEFAULT_THEME } from '~/composables/useTheme'
 
 /**
  * Acesso ao store `settings`: preferências chave/valor persistidas no
@@ -11,9 +12,6 @@ import {
 
 /** Chave da preferência de tema. */
 export const THEME_KEY = 'theme'
-
-/** Valor padrão do tema (design system: dark por padrão). */
-export const DEFAULT_THEME = 'dark'
 
 /**
  * Defaults semeados quando a chave ainda não foi salva. Ler uma dessas chaves
