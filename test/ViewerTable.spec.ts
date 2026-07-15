@@ -11,6 +11,19 @@ function makeColumns(): ViewerColumn[] {
   ]
 }
 
+/** Dispara um pointerdown/pointermove/pointerup no handle de resize da coluna `columnPos`. */
+async function dragResizeHandle(
+  wrapper: ReturnType<typeof mount>,
+  columnPos: number,
+  startX: number,
+  endX: number,
+) {
+  const handle = wrapper.findAll('.viewer-table__th-resize')[columnPos]!
+  await handle.trigger('pointerdown', { clientX: startX, pointerId: 1 })
+  await handle.trigger('pointermove', { clientX: endX, pointerId: 1 })
+  await handle.trigger('pointerup', { clientX: endX, pointerId: 1 })
+}
+
 const ROWS = [
   ['1', 'Ana', '100'],
   ['2', 'Bruno', '250'],
@@ -208,5 +221,65 @@ describe('ViewerTable', () => {
     expect(headers[0]!.find('.viewer-table__th-priority').text()).toBe('1')
     expect(headers[2]!.find('.viewer-table__th-priority').text()).toBe('2')
     expect(headers[1]!.find('.viewer-table__th-priority').exists()).toBe(false)
+  })
+
+  // RF-04: cada `<th>` recebe --col-w a partir da largura da própria coluna.
+  it('RF-04: aplica --col-w por coluna a partir de column.width', () => {
+    const columns = makeColumns()
+    columns[1]!.width = 260
+    const wrapper = mount(ViewerTable, { props: { columns, rows: ROWS } })
+
+    const headers = wrapper.findAll('.viewer-table__th')
+    expect(headers[0]!.attributes('style')).toContain('--col-w: 180px')
+    expect(headers[1]!.attributes('style')).toContain('--col-w: 260px')
+    expect(headers[2]!.attributes('style')).toContain('--col-w: 180px')
+  })
+
+  // RF-04/UI-03: arrastar a borda de resize emite `resize` com a nova largura.
+  it('RF-04: arrastar o handle de resize emite resize(index, width)', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    // Coluna na posição 1 (index 1, "name"), largura inicial 180: arrasta +50px.
+    await dragResizeHandle(wrapper, 1, 100, 150)
+
+    expect(wrapper.emitted('resize')).toEqual([[1, 230]])
+  })
+
+  it('RF-04: arrastar além do limite inferior não reduz a largura abaixo de 48px', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    // Coluna na posição 0 (index 0, "id"), largura inicial 180: arrasta -1000px.
+    await dragResizeHandle(wrapper, 0, 100, -900)
+
+    expect(wrapper.emitted('resize')).toEqual([[0, 48]])
+  })
+
+  it('RF-04: não emite resize antes do pointerdown ou após o pointerup', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+    const handle = wrapper.findAll('.viewer-table__th-resize')[0]!
+
+    await handle.trigger('pointermove', { clientX: 150, pointerId: 1 })
+    expect(wrapper.emitted('resize')).toBeUndefined()
+
+    await handle.trigger('pointerdown', { clientX: 100, pointerId: 1 })
+    await handle.trigger('pointerup', { clientX: 100, pointerId: 1 })
+    await handle.trigger('pointermove', { clientX: 200, pointerId: 1 })
+    expect(wrapper.emitted('resize')).toBeUndefined()
+  })
+
+  // UI-03: o handle de resize expõe cursor col-resize, distinto do cabeçalho.
+  it('UI-03: o handle de resize tem affordance de cursor col-resize', () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    const handle = wrapper.findAll('.viewer-table__th-resize')[0]!
+    expect(handle.attributes('role')).toBe('separator')
   })
 })

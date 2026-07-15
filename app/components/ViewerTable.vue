@@ -21,6 +21,13 @@ import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useView
  * painel de estatísticas é feita por um affordance dedicado no cabeçalho
  * (`select-column`, UI-06), separado do clique de ordenação.
  *
+ * Uma faixa de ~6px na borda direita do cabeçalho é o handle de redimensionamento
+ * (RF-04): arrastar com Pointer Events emite `resize` (índice original + nova
+ * largura) a cada movimento, com cursor `col-resize` distinto do resto do
+ * cabeçalho (UI-03). A largura de cada coluna (`column.width`) substitui a
+ * largura uniforme anterior — `gridWidth` soma as larguras por coluna e cada
+ * `<th>`/célula recebe `--col-w` individualmente.
+ *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
 const props = withDefaults(
@@ -44,6 +51,8 @@ const emit = defineEmits<{
   (e: 'sort', index: number): void
   /** Shift+clique no cabeçalho: adiciona/avança/remove a coluna nas chaves de ordenação (RF-02). */
   (e: 'sort-additive', index: number): void
+  /** Arraste da borda direita do cabeçalho: nova largura em px para a coluna (índice original, RF-04). */
+  (e: 'resize', index: number, width: number): void
 }>()
 
 /** Clique no cabeçalho: ordena (RF-01), ou adiciona à ordenação multi-coluna com Shift (RF-02). */
@@ -84,18 +93,64 @@ function ariaSortFor(index: number): 'ascending' | 'descending' | undefined {
 /** Altura estimada de cada linha, em px (usada pela virtualização). */
 const ROW_HEIGHT = 40
 
-/** Largura fixa de cada coluna, em px (deve casar com `--col-w` no CSS). */
-const COL_WIDTH = 180
+/** Largura padrão de uma coluna sem `width` definido (deve casar com `useViewer`). */
+const DEFAULT_COL_WIDTH = 180
+
+/** Largura mínima de uma coluna redimensionada, em px (RF-04; deve casar com `useViewer`). */
+const MIN_COL_WIDTH = 48
+
+/** Largura de uma coluna em px, com fallback ao padrão (RF-04). */
+function widthFor(column: ViewerColumn): number {
+  return column.width ?? DEFAULT_COL_WIDTH
+}
+
+/** Custom property `--col-w` desta coluna, para o `<th>`/célula correspondente. */
+function colWidthStyle(column: ViewerColumn): Record<string, string> {
+  return { '--col-w': `${widthFor(column)}px` }
+}
 
 /**
- * Largura definida da grade = nº de colunas × largura da coluna.
+ * Largura definida da grade = soma da largura de cada coluna (RF-04).
  *
  * Precisa ser um valor *definido* (não `max-content`): com `table-layout: fixed`
  * o navegador só respeita as larguras fixas das colunas se a tabela tiver largura
  * definida. Com `max-content`, ele cai no layout automático e uma célula de texto
  * longo expande a coluna, desalinhando as linhas.
  */
-const gridWidth = computed(() => `${props.columns.length * COL_WIDTH}px`)
+const gridWidth = computed(
+  () => `${props.columns.reduce((sum, column) => sum + widthFor(column), 0)}px`,
+)
+
+/** Índice original da coluna sendo redimensionada no momento, ou `null`. */
+const resizingIndex = ref<number | null>(null)
+let resizeStartX = 0
+let resizeStartWidth = 0
+
+/** Início do arraste de redimensionamento (RF-04): registra a posição/largura iniciais. */
+function onResizePointerDown(index: number, width: number, event: PointerEvent): void {
+  resizingIndex.value = index
+  resizeStartX = event.clientX
+  resizeStartWidth = width
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+/**
+ * Arraste em andamento: emite `resize` com a largura acumulada, nunca abaixo
+ * de {@link MIN_COL_WIDTH} (RF-04).
+ */
+function onResizePointerMove(event: PointerEvent): void {
+  if (resizingIndex.value === null) return
+  const delta = event.clientX - resizeStartX
+  const width = Math.max(MIN_COL_WIDTH, resizeStartWidth + delta)
+  emit('resize', resizingIndex.value, width)
+}
+
+/** Fim do arraste de redimensionamento (pointerup/pointercancel). */
+function onResizePointerUp(event: PointerEvent): void {
+  if (resizingIndex.value === null) return
+  ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+  resizingIndex.value = null
+}
 
 const scroller = ref<HTMLElement | null>(null)
 
@@ -118,7 +173,13 @@ const isEmpty = computed(() => props.rows.length === 0)
 </script>
 
 <template>
-  <div ref="scroller" class="viewer-table" role="region" aria-label="Tabela de dados">
+  <div
+    ref="scroller"
+    class="viewer-table"
+    :class="{ 'viewer-table--resizing': resizingIndex !== null }"
+    role="region"
+    aria-label="Tabela de dados"
+  >
     <table class="viewer-table__grid">
       <thead class="viewer-table__head">
         <tr class="viewer-table__row" :style="{ width: gridWidth }">
@@ -131,6 +192,7 @@ const isEmpty = computed(() => props.rows.length === 0)
               'viewer-table__th--selected': column.index === selectedIndex,
               'viewer-table__th--sorted': sortDirectionFor(column.index) !== null,
             }"
+            :style="colWidthStyle(column)"
             scope="col"
             :aria-selected="column.index === selectedIndex"
             :aria-sort="ariaSortFor(column.index)"
@@ -175,6 +237,17 @@ const isEmpty = computed(() => props.rows.length === 0)
                 <rect x="9" y="1" width="2.5" height="10" fill="currentColor" />
               </svg>
             </button>
+            <div
+              class="viewer-table__th-resize"
+              :class="{ 'viewer-table__th-resize--active': resizingIndex === column.index }"
+              role="separator"
+              aria-orientation="vertical"
+              :aria-label="`Redimensionar coluna ${column.label}`"
+              @pointerdown="onResizePointerDown(column.index, widthFor(column), $event)"
+              @pointermove="onResizePointerMove"
+              @pointerup="onResizePointerUp"
+              @pointercancel="onResizePointerUp"
+            />
           </th>
         </tr>
       </thead>
@@ -192,6 +265,7 @@ const isEmpty = computed(() => props.rows.length === 0)
           <CsvCell
             v-for="column in columns"
             :key="column.index"
+            :style="colWidthStyle(column)"
             :value="rows[virtualRow.index]?.[column.index]"
             :numeric="column.type === 'number'"
             :selected="column.index === selectedIndex"
@@ -267,6 +341,7 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 .viewer-table__th {
+  position: relative;
   width: var(--col-w);
   display: flex;
   align-items: center;
@@ -281,6 +356,35 @@ const isEmpty = computed(() => props.rows.length === 0)
   border-bottom: 1px solid var(--border);
   /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
   border-right: 1px solid var(--border);
+}
+
+/* Handle de redimensionamento (RF-04): faixa fina na borda direita do cabeçalho,
+   com affordance de cursor `col-resize` distinto do resto do cabeçalho — que é
+   clicável para ordenar (RF-01) ou arrastável para reordenar (RF-05), UI-03. */
+.viewer-table__th-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.viewer-table__th-resize:hover,
+.viewer-table__th-resize--active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+/* Durante o arraste, o cursor de resize se aplica à tabela inteira (o ponteiro
+   pode passar por cima de outras células enquanto arrasta) e o texto não deve
+   ser selecionado. */
+.viewer-table--resizing,
+.viewer-table--resizing * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 /* Colunas numéricas: cabeçalho à direita em mono, alinhado às células. */
