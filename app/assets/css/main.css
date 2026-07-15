@@ -100,3 +100,39 @@ body {
   color: var(--text);
   font-family: var(--font);
 }
+
+/*
+ * Scrollbar no padrão do sistema — fino e temático (usa os tokens, então segue
+ * dark/light automaticamente). Firefox via `scrollbar-*`; Chromium/Safari via
+ * `::-webkit-scrollbar`. Aplicado globalmente para coerência entre as telas.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

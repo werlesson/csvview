@@ -12,15 +12,16 @@ const isDark = computed(() => theme.value === 'dark')
 // (fiel ao design da Screen 2); nas demais rotas, a marca do produto.
 const route = useRoute()
 const { meta } = useCurrentDataset()
+const isViewer = computed(() => route.path === '/viewer')
 const currentFile = computed(() =>
-  route.path === '/viewer' ? (meta.value?.name ?? null) : null,
+  isViewer.value ? (meta.value?.name ?? null) : null,
 )
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <div class="app-header__inner">
+      <div class="app-header__inner" :class="{ 'app-header__inner--wide': isViewer }">
         <a v-if="currentFile" class="brand" href="/" :title="`${currentFile} — voltar ao início`">
           <span class="brand__file">{{ currentFile }}</span>
         </a>
@@ -42,7 +43,7 @@ const currentFile = computed(() =>
       </div>
     </header>
 
-    <main class="app-content">
+    <main class="app-content" :class="{ 'app-content--wide': isViewer }">
       <slot />
     </main>
   </div>
@@ -50,7 +51,7 @@ const currentFile = computed(() =>
 
 <style scoped>
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -73,6 +74,12 @@ const currentFile = computed(() =>
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+/* No Viewer, header e conteúdo usam a largura total (só o respiro lateral),
+   aproveitando o espaço horizontal; o filename fica alinhado à borda do card. */
+.app-header__inner--wide {
+  max-width: none;
 }
 
 .brand {
@@ -127,10 +134,18 @@ const currentFile = computed(() =>
 
 .app-content {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   max-width: 1280px;
   width: 100%;
   margin: 0 auto;
   padding: 24px 20px;
+  overflow-y: auto;
+}
+
+.app-content--wide {
+  max-width: none;
 }
 
 /* Responsivo: reduz gaps e esconde o selo em telas estreitas. */
