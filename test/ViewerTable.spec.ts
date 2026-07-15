@@ -111,18 +111,6 @@ describe('ViewerTable', () => {
     expect(wrapper.find('.viewer-table__body').exists()).toBe(true)
   })
 
-  // stats-select-column → clicar no cabeçalho seleciona a coluna
-  it('stats-select-column: clicar no cabeçalho emite select-column com o índice', async () => {
-    const wrapper = mount(ViewerTable, {
-      props: { columns: makeColumns(), rows: ROWS },
-    })
-
-    // Clica no cabeçalho da terceira coluna (index 2, "amount").
-    await wrapper.findAll('.viewer-table__th-button')[2]!.trigger('click')
-
-    expect(wrapper.emitted('select-column')).toEqual([[2]])
-  })
-
   it('marca o cabeçalho da coluna selecionada', () => {
     const wrapper = mount(ViewerTable, {
       props: { columns: makeColumns(), rows: ROWS, selectedIndex: 2 },
@@ -132,5 +120,93 @@ describe('ViewerTable', () => {
     expect(headers[0]!.classes()).not.toContain('viewer-table__th--selected')
     expect(headers[2]!.classes()).toContain('viewer-table__th--selected')
     expect(headers[2]!.attributes('aria-selected')).toBe('true')
+  })
+
+  // RF-01: clique simples no cabeçalho ordena (e não abre o painel de stats).
+  it('RF-01: clique simples no cabeçalho emite sort com o índice e não select-column', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    // Clica no cabeçalho da terceira coluna (index 2, "amount").
+    await wrapper.findAll('.viewer-table__th-button')[2]!.trigger('click')
+
+    expect(wrapper.emitted('sort')).toEqual([[2]])
+    expect(wrapper.emitted('select-column')).toBeUndefined()
+    expect(wrapper.emitted('sort-additive')).toBeUndefined()
+  })
+
+  // RF-02: Shift+clique adiciona a coluna à ordenação multi-coluna.
+  it('RF-02: shift+clique no cabeçalho emite sort-additive com o índice', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    await wrapper
+      .findAll('.viewer-table__th-button')[1]!
+      .trigger('click', { shiftKey: true })
+
+    expect(wrapper.emitted('sort-additive')).toEqual([[1]])
+    expect(wrapper.emitted('sort')).toBeUndefined()
+  })
+
+  // UI-06: affordance dedicado seleciona a coluna para stats, sem tocar na ordenação.
+  it('UI-06: affordance dedicado de estatísticas emite select-column sem alterar ordenação', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    await wrapper.findAll('.viewer-table__th-stats')[0]!.trigger('click')
+
+    expect(wrapper.emitted('select-column')).toEqual([[0]])
+    expect(wrapper.emitted('sort')).toBeUndefined()
+    expect(wrapper.emitted('sort-additive')).toBeUndefined()
+  })
+
+  // UI-01: indicador de direção distinguível por forma (não apenas cor).
+  it('UI-01: mostra indicador de direção distinguível por forma (asc ≠ desc), nada quando não ordenada', () => {
+    const noneWrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+    expect(noneWrapper.find('.viewer-table__th-sort-icon').exists()).toBe(false)
+
+    const ascWrapper = mount(ViewerTable, {
+      props: {
+        columns: makeColumns(),
+        rows: ROWS,
+        sortKeys: [{ index: 0, direction: 'asc' }],
+      },
+    })
+    const descWrapper = mount(ViewerTable, {
+      props: {
+        columns: makeColumns(),
+        rows: ROWS,
+        sortKeys: [{ index: 0, direction: 'desc' }],
+      },
+    })
+
+    expect(ascWrapper.find('.viewer-table__th-sort-icon--asc').exists()).toBe(true)
+    expect(ascWrapper.find('.viewer-table__th-sort-icon--desc').exists()).toBe(false)
+    expect(descWrapper.find('.viewer-table__th-sort-icon--desc').exists()).toBe(true)
+    expect(descWrapper.find('.viewer-table__th-sort-icon--asc').exists()).toBe(false)
+  })
+
+  // UI-02: número de prioridade correto e distinto em ordenação multi-coluna.
+  it('UI-02: exibe o número de prioridade correto em ordenação multi-coluna', () => {
+    const wrapper = mount(ViewerTable, {
+      props: {
+        columns: makeColumns(),
+        rows: ROWS,
+        sortKeys: [
+          { index: 0, direction: 'asc' },
+          { index: 2, direction: 'desc' },
+        ],
+      },
+    })
+
+    const headers = wrapper.findAll('.viewer-table__th')
+    expect(headers[0]!.find('.viewer-table__th-priority').text()).toBe('1')
+    expect(headers[2]!.find('.viewer-table__th-priority').text()).toBe('2')
+    expect(headers[1]!.find('.viewer-table__th-priority').exists()).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
-import type { ViewerColumn } from '~/composables/useViewer'
+import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
 /**
  * Tabela **virtualizada** do Viewer (Fase 7, US-2.1).
@@ -12,8 +12,14 @@ import type { ViewerColumn } from '~/composables/useViewer'
  * linhas sem materializar tudo. As células usam {@link CsvCell}; colunas
  * numéricas (tipo inferido na Fase 5) alinham à direita em fonte monoespaçada.
  *
- * Recebe apenas as colunas **visíveis** e as linhas **já filtradas** pela busca;
- * quando não há linhas, exibe o estado "nenhuma linha encontrada" (US-2.2).
+ * Recebe apenas as colunas **visíveis** e as linhas **já filtradas/ordenadas**
+ * pela busca e pela ordenação; quando não há linhas, exibe o estado "nenhuma
+ * linha encontrada" (US-2.2).
+ *
+ * Clique simples no cabeçalho ordena (`sort`, RF-01); Shift+clique adiciona à
+ * ordenação multi-coluna (`sort-additive`, RF-02). A seleção da coluna para o
+ * painel de estatísticas é feita por um affordance dedicado no cabeçalho
+ * (`select-column`, UI-06), separado do clique de ordenação.
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
@@ -21,21 +27,58 @@ const props = withDefaults(
   defineProps<{
     /** Colunas visíveis, na ordem do cabeçalho (cada uma com seu índice original). */
     columns: ViewerColumn[]
-    /** Linhas já filtradas pela busca; cada linha é o array completo de células. */
+    /** Linhas já filtradas/ordenadas pela busca e ordenação; cada linha é o array completo de células. */
     rows: string[][]
     /** Índice da coluna selecionada (para o painel de estatísticas), ou `null`. */
     selectedIndex?: number | null
+    /** Chaves de ordenação ativas, em ordem de prioridade decrescente (RF-01, RF-02). */
+    sortKeys?: SortKey[]
   }>(),
-  { selectedIndex: null },
+  { selectedIndex: null, sortKeys: () => [] },
 )
 
 const emit = defineEmits<{
-  /** Coluna selecionada pelo clique no cabeçalho (abre/atualiza o painel de stats). */
+  /** Affordance dedicado de estatísticas acionado (abre/atualiza o painel de stats, UI-06). */
   (e: 'select-column', index: number): void
+  /** Clique simples no cabeçalho: única chave de ordenação, avança asc → desc → sem ordenação (RF-01). */
+  (e: 'sort', index: number): void
+  /** Shift+clique no cabeçalho: adiciona/avança/remove a coluna nas chaves de ordenação (RF-02). */
+  (e: 'sort-additive', index: number): void
 }>()
 
-function onSelect(index: number): void {
+/** Clique no cabeçalho: ordena (RF-01), ou adiciona à ordenação multi-coluna com Shift (RF-02). */
+function onHeaderClick(index: number, event: MouseEvent): void {
+  if (event.shiftKey) emit('sort-additive', index)
+  else emit('sort', index)
+}
+
+/** Affordance dedicado (ícone) que seleciona a coluna para o painel de estatísticas (UI-06). */
+function onSelectStats(index: number): void {
   emit('select-column', index)
+}
+
+/** A chave de ordenação ativa desta coluna (por índice original), ou `null`. */
+function sortKeyFor(index: number): SortKey | null {
+  return props.sortKeys.find((key) => key.index === index) ?? null
+}
+
+/** Direção de ordenação desta coluna, ou `null` quando não é chave de ordenação. */
+function sortDirectionFor(index: number): SortDirection | null {
+  return sortKeyFor(index)?.direction ?? null
+}
+
+/** Prioridade (1, 2, 3…) desta coluna em multi-sort, ou `null` quando não é chave (UI-02). */
+function sortPriorityFor(index: number): number | null {
+  const position = props.sortKeys.findIndex((key) => key.index === index)
+  return position === -1 ? null : position + 1
+}
+
+/** `aria-sort` do cabeçalho, derivado da direção ativa. */
+function ariaSortFor(index: number): 'ascending' | 'descending' | undefined {
+  const direction = sortDirectionFor(index)
+  if (direction === 'asc') return 'ascending'
+  if (direction === 'desc') return 'descending'
+  return undefined
 }
 
 /** Altura estimada de cada linha, em px (usada pela virtualização). */
@@ -86,17 +129,51 @@ const isEmpty = computed(() => props.rows.length === 0)
             :class="{
               'viewer-table__th--numeric': column.type === 'number',
               'viewer-table__th--selected': column.index === selectedIndex,
+              'viewer-table__th--sorted': sortDirectionFor(column.index) !== null,
             }"
             scope="col"
             :aria-selected="column.index === selectedIndex"
+            :aria-sort="ariaSortFor(column.index)"
           >
             <button
               type="button"
               class="viewer-table__th-button"
-              @click="onSelect(column.index)"
+              @click="onHeaderClick(column.index, $event)"
             >
               <span class="viewer-table__th-label">{{ column.label }}</span>
               <span class="viewer-table__th-type">{{ column.type }}</span>
+              <svg
+                v-if="sortDirectionFor(column.index)"
+                class="viewer-table__th-sort-icon"
+                :class="`viewer-table__th-sort-icon--${sortDirectionFor(column.index)}`"
+                viewBox="0 0 10 10"
+                width="10"
+                height="10"
+                aria-hidden="true"
+              >
+                <path
+                  v-if="sortDirectionFor(column.index) === 'asc'"
+                  d="M5 2 L9 8 L1 8 Z"
+                  fill="currentColor"
+                />
+                <path v-else d="M5 8 L1 2 L9 2 Z" fill="currentColor" />
+              </svg>
+              <span
+                v-if="sortPriorityFor(column.index) !== null"
+                class="viewer-table__th-priority"
+              >{{ sortPriorityFor(column.index) }}</span>
+            </button>
+            <button
+              type="button"
+              class="viewer-table__th-stats"
+              :aria-label="`Ver estatísticas de ${column.label}`"
+              @click="onSelectStats(column.index)"
+            >
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                <rect x="1" y="6" width="2.5" height="5" fill="currentColor" />
+                <rect x="5" y="3" width="2.5" height="8" fill="currentColor" />
+                <rect x="9" y="1" width="2.5" height="10" fill="currentColor" />
+              </svg>
             </button>
           </th>
         </tr>
@@ -191,8 +268,10 @@ const isEmpty = computed(() => props.rows.length === 0)
 
 .viewer-table__th {
   width: var(--col-w);
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 10px 12px;
-  text-align: left;
   font-family: var(--font);
   font-size: 11px;
   font-weight: 600;
@@ -202,15 +281,25 @@ const isEmpty = computed(() => props.rows.length === 0)
   border-bottom: 1px solid var(--border);
   /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
   border-right: 1px solid var(--border);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Colunas numéricas: cabeçalho à direita em mono, alinhado às células. */
 .viewer-table__th--numeric {
-  text-align: right;
   font-family: var(--mono);
+}
+
+.viewer-table__th--numeric .viewer-table__th-button {
+  justify-content: flex-end;
+}
+
+.viewer-table__th--numeric .viewer-table__th-label {
+  text-align: right;
+}
+
+/* Cabeçalho ordenado: rótulo ganha destaque (o ícone de direção já indica o
+   estado — cor não é o único sinal, UI-01). */
+.viewer-table__th--sorted .viewer-table__th-label {
+  color: var(--text);
 }
 
 /* Coluna selecionada: destaque do cabeçalho enquanto o painel de stats está
@@ -233,8 +322,11 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 .viewer-table__th-button {
-  display: block;
-  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
   padding: 0;
   margin: 0;
   border: none;
@@ -250,8 +342,59 @@ const isEmpty = computed(() => props.rows.length === 0)
 }
 
 .viewer-table__th-label {
-  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-2);
+}
+
+/* Indicador de direção (UI-01): forma distinta por asc/desc (triângulo para
+   cima/para baixo), não dependente apenas de cor. */
+.viewer-table__th-sort-icon {
+  flex: none;
+  color: var(--accent);
+}
+
+/* Número de prioridade em multi-sort (UI-02). */
+.viewer-table__th-priority {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-1);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Affordance dedicado do painel de estatísticas (UI-06): distinto do clique
+   de ordenação — botão próprio, fora da área clicável de `.viewer-table__th-button`. */
+.viewer-table__th-stats {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.viewer-table__th-stats:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* O tipo da coluna não aparece no cabeçalho (fiel ao design da Screen 2): fica
