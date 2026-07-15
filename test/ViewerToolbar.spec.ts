@@ -65,4 +65,36 @@ describe('ViewerToolbar', () => {
     expect(emitted).toBeTruthy()
     expect(emitted!.at(-1)).toEqual([1])
   })
+
+  // UI-05: o controle de pin no menu "Colunas" emite toggle-pin com o índice
+  // original da coluna — mesmo estado do botão de pin do cabeçalho da tabela.
+  it('emite "toggle-pin" ao acionar o controle de pin de um item do menu "Colunas"', async () => {
+    const wrapper = mountToolbar()
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    const pinButtons = wrapper.findAll('.columns-menu__pin')
+    expect(pinButtons).toHaveLength(3)
+
+    await pinButtons[0]!.trigger('click')
+
+    expect(wrapper.emitted('toggle-pin')).toEqual([[0]])
+  })
+
+  // UI-05: o item de uma coluna fixada é visualmente distinguível, reusando a
+  // variação `pinned` de ColumnChip.
+  it('reflete a coluna fixada com a variação "pinned" de ColumnChip no menu "Colunas"', async () => {
+    const columns = makeColumns()
+    columns[0]!.pinned = true
+    const wrapper = mountToolbar({ columns })
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    const items = wrapper.findAll('.columns-menu__item')
+    expect(items[0]!.classes()).toContain('columns-menu__item--pinned')
+    expect(items[1]!.classes()).not.toContain('columns-menu__item--pinned')
+
+    expect(items[0]!.find('.chip--pinned').exists()).toBe(true)
+    expect(items[1]!.find('.chip--pinned').exists()).toBe(false)
+  })
 })

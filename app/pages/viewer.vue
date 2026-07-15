@@ -39,6 +39,7 @@ const {
   sortColumnAdditive,
   resizeColumn,
   reorderColumn,
+  togglePin,
   displayColumns,
 } = useViewer(() => dataset.value)
 
@@ -52,6 +53,7 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
       :row-count="totalRows"
       :columns="columns"
       @toggle-column="toggleColumn"
+      @toggle-pin="togglePin"
     />
 
     <div class="viewer__body">
@@ -65,6 +67,7 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
         @sort-additive="sortColumnAdditive"
         @resize="resizeColumn"
         @reorder="reorderColumn"
+        @toggle-pin="togglePin"
       />
 
       <StatsPanel :label="selectedLabel" :stats="selectedStats" />

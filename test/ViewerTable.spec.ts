@@ -356,4 +356,40 @@ describe('ViewerTable', () => {
     expect(statsButton.attributes('draggable')).toBe('false')
     expect(headerButton.attributes('draggable')).toBe('true')
   })
+
+  // RF-06/UI-05: o botão de pin do cabeçalho emite toggle-pin com o índice
+  // original da coluna.
+  it('RF-06/UI-05: o botão de pin do cabeçalho emite toggle-pin(index)', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS },
+    })
+
+    await wrapper.findAll('.viewer-table__th-pin')[2]!.trigger('click')
+
+    expect(wrapper.emitted('toggle-pin')).toEqual([[2]])
+  })
+
+  // RF-06: colunas fixadas recebem left acumulado pela soma das larguras das
+  // fixadas anteriores — displayColumns já entrega o grupo fixado primeiro,
+  // na ordem de fixação.
+  it('RF-06: acumula o offset sticky (left) pelas larguras das colunas fixadas anteriores', () => {
+    const columns: ViewerColumn[] = [
+      { index: 2, label: 'amount', type: 'number', visible: true, pinned: true, width: 120 },
+      { index: 0, label: 'id', type: 'number', visible: true, pinned: true, width: 90 },
+      { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+    ]
+    const wrapper = mount(ViewerTable, { props: { columns, rows: ROWS } })
+
+    const headers = wrapper.findAll('.viewer-table__th')
+    // Primeira fixada (amount): sem fixadas antes → left: 0px.
+    expect(headers[0]!.attributes('style')).toContain('left: 0px')
+    // Segunda fixada (id): acumula a largura da primeira (120px).
+    expect(headers[1]!.attributes('style')).toContain('left: 120px')
+    // Não fixada: sem `left` no estilo.
+    expect(headers[2]!.attributes('style')).not.toContain('left:')
+
+    expect(headers[0]!.classes()).toContain('viewer-table__th--pinned')
+    expect(headers[1]!.classes()).toContain('viewer-table__th--pinned')
+    expect(headers[2]!.classes()).not.toContain('viewer-table__th--pinned')
+  })
 })

@@ -37,6 +37,15 @@ import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useView
  * distinta do handle de resize (UI-03) e do botão de estatísticas (UI-06),
  * ambos não-arrastáveis.
  *
+ * Colunas fixadas (pin, RF-06) chegam já agrupadas à esquerda em `columns`
+ * (ordem de fixação, resolvida por `displayColumns` em `useViewer`) e são
+ * renderizadas com `position: sticky; left: <offset>`, acumulando as larguras
+ * das fixadas anteriores — tanto no `<th>` quanto na célula correspondente do
+ * corpo virtualizado, para preservar o alinhamento (RF-07). Um botão de pin no
+ * cabeçalho emite `toggle-pin(index)` (para `togglePin` em `useViewer`); o
+ * mesmo estado é refletido com o visual "fixada" (UI-05a), distinto das
+ * colunas não fixadas.
+ *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
 const props = withDefaults(
@@ -64,6 +73,8 @@ const emit = defineEmits<{
   (e: 'resize', index: number, width: number): void
   /** Soltura do arraste de reordenação: posições renderizadas de origem/destino (RF-05). */
   (e: 'reorder', from: number, to: number): void
+  /** Botão de pin do cabeçalho acionado: alterna a fixação da coluna (índice original, RF-06). */
+  (e: 'toggle-pin', index: number): void
 }>()
 
 /** Clique no cabeçalho: ordena (RF-01), ou adiciona à ordenação multi-coluna com Shift (RF-02). */
@@ -75,6 +86,11 @@ function onHeaderClick(index: number, event: MouseEvent): void {
 /** Affordance dedicado (ícone) que seleciona a coluna para o painel de estatísticas (UI-06). */
 function onSelectStats(index: number): void {
   emit('select-column', index)
+}
+
+/** Botão de pin do cabeçalho: alterna a fixação da coluna (RF-06). */
+function onTogglePin(index: number): void {
+  emit('toggle-pin', index)
 }
 
 /** A chave de ordenação ativa desta coluna (por índice original), ou `null`. */
@@ -118,6 +134,56 @@ function widthFor(column: ViewerColumn): number {
 /** Custom property `--col-w` desta coluna, para o `<th>`/célula correspondente. */
 function colWidthStyle(column: ViewerColumn): Record<string, string> {
   return { '--col-w': `${widthFor(column)}px` }
+}
+
+/**
+ * Offset `left` (em px) de cada coluna fixada, por índice original (RF-06):
+ * acumula a largura das colunas fixadas anteriores. `columns` já chega com o
+ * grupo fixado primeiro e na ordem de fixação (`displayColumns` em
+ * `useViewer`), então basta somar as larguras na ordem em que aparecem.
+ */
+const pinnedOffsets = computed<Map<number, number>>(() => {
+  const offsets = new Map<number, number>()
+  let sum = 0
+  for (const column of props.columns) {
+    if (!column.pinned) continue
+    offsets.set(column.index, sum)
+    sum += widthFor(column)
+  }
+  return offsets
+})
+
+/** Offset `left` desta coluna fixada, ou `0` quando não fixada. */
+function pinnedOffsetFor(index: number): number {
+  return pinnedOffsets.value.get(index) ?? 0
+}
+
+/**
+ * Estilo do `<th>`: largura via `--col-w` e, quando fixada, `left` acumulado
+ * (a posição `sticky` em si vive em `.viewer-table__th--pinned`, CSS estático).
+ */
+function thStyleFor(column: ViewerColumn): Record<string, string> {
+  const style = colWidthStyle(column)
+  if (column.pinned) style.left = `${pinnedOffsetFor(column.index)}px`
+  return style
+}
+
+/**
+ * Estilo da célula do corpo virtualizado: largura via `--col-w` e, quando
+ * fixada, `position: sticky` + `left` acumulado + fundo opaco (para cobrir as
+ * colunas não fixadas que rolam por baixo) — preserva o alinhamento com o
+ * cabeçalho fixado (RF-07).
+ */
+function cellStyleFor(column: ViewerColumn): Record<string, string> {
+  const style = colWidthStyle(column)
+  if (!column.pinned) return style
+  return {
+    ...style,
+    position: 'sticky',
+    left: `${pinnedOffsetFor(column.index)}px`,
+    zIndex: '1',
+    background: 'var(--bg-2)',
+  }
 }
 
 /**
@@ -254,8 +320,9 @@ const isEmpty = computed(() => props.rows.length === 0)
               'viewer-table__th--dragging': dragFromPos === pos,
               'viewer-table__th--drop-before': dropIndicatorFor(pos) === 'before',
               'viewer-table__th--drop-after': dropIndicatorFor(pos) === 'after',
+              'viewer-table__th--pinned': column.pinned,
             }"
-            :style="colWidthStyle(column)"
+            :style="thStyleFor(column)"
             scope="col"
             :aria-selected="column.index === selectedIndex"
             :aria-sort="ariaSortFor(column.index)"
@@ -306,6 +373,22 @@ const isEmpty = computed(() => props.rows.length === 0)
                 <rect x="9" y="1" width="2.5" height="10" fill="currentColor" />
               </svg>
             </button>
+            <button
+              type="button"
+              class="viewer-table__th-pin"
+              :class="{ 'viewer-table__th-pin--active': column.pinned }"
+              draggable="false"
+              :aria-pressed="column.pinned"
+              :aria-label="column.pinned ? `Desfixar coluna ${column.label}` : `Fixar coluna ${column.label}`"
+              @click="onTogglePin(column.index)"
+            >
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                <path
+                  d="M4 1.5 H8 L7.4 5 L9.5 6.8 H6.5 L5.8 10.5 H5.2 L4.5 6.8 H1.5 L3.6 5 Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </button>
             <div
               class="viewer-table__th-resize"
               :class="{ 'viewer-table__th-resize--active': resizingIndex === column.index }"
@@ -334,7 +417,7 @@ const isEmpty = computed(() => props.rows.length === 0)
           <CsvCell
             v-for="column in columns"
             :key="column.index"
-            :style="colWidthStyle(column)"
+            :style="cellStyleFor(column)"
             :value="rows[virtualRow.index]?.[column.index]"
             :numeric="column.type === 'number'"
             :selected="column.index === selectedIndex"
@@ -499,6 +582,19 @@ const isEmpty = computed(() => props.rows.length === 0)
   color: var(--text);
 }
 
+/* Coluna fixada (pin, UI-05a): permanece na borda esquerda durante o scroll
+   horizontal (`left` acumulado vem do estilo inline, `thStyleFor`); estado
+   visual distinto das não fixadas — fundo próprio (opaco, cobre as colunas
+   que rolam por baixo) e borda accent, ecoando `chip--pinned` de ColumnChip.
+   `z-index` acima das colunas comuns e do cabeçalho comum (sticky top),
+   para permanecer visível na interseção de ambos os eixos de scroll. */
+.viewer-table__th--pinned {
+  position: sticky;
+  z-index: 2;
+  background: var(--bg-2);
+  border-right-color: var(--accent);
+}
+
 /* Coluna selecionada: destaque do cabeçalho enquanto o painel de stats está
    aberto. Faixa accent (borda inferior + laterais) para virar uma coluna
    realçada de ponta a ponta, fiel ao design. */
@@ -592,6 +688,34 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table__th-stats:hover {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* Botão de pin do cabeçalho (UI-05): alterna a fixação da coluna à esquerda
+   (RF-06) — mesmo estado do controle equivalente no menu "Colunas" do
+   ViewerToolbar. Ativo (coluna fixada) ganha a cor accent, ecoando
+   `chip--pinned` de ColumnChip. */
+.viewer-table__th-pin {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.viewer-table__th-pin:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.viewer-table__th-pin--active {
+  color: var(--accent);
 }
 
 /* O tipo da coluna não aparece no cabeçalho (fiel ao design da Screen 2): fica
