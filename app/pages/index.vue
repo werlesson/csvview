@@ -78,6 +78,17 @@ async function onReopen(id: number): Promise<void> {
   max-width: 1040px;
   margin: 0 auto;
   padding: 40px 0;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Só a coluna de recentes estica para a altura da linha do grid; o hero
+   continua alinhado ao topo (align-items: start acima). Isso confina o
+   scroll à lista quando há muitos arquivos recentes (ver .recents__list
+   em RecentFiles.vue), em vez de rolar a tela inteira. */
+.upload__recents {
+  align-self: stretch;
+  min-height: 0;
 }
 
 .upload__main {

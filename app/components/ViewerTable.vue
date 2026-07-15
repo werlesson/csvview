@@ -329,66 +329,68 @@ const isEmpty = computed(() => props.rows.length === 0)
             @dragover.prevent="onHeaderDragOver(pos)"
             @drop.prevent="onHeaderDrop(pos)"
           >
-            <button
-              type="button"
-              class="viewer-table__th-button"
-              draggable="true"
-              @click="onHeaderClick(column.index, $event)"
-              @dragstart="onHeaderDragStart(pos, $event)"
-              @dragend="onHeaderDragEnd"
-            >
-              <span class="viewer-table__th-label">{{ column.label }}</span>
-              <span class="viewer-table__th-type">{{ column.type }}</span>
-              <svg
-                v-if="sortDirectionFor(column.index)"
-                class="viewer-table__th-sort-icon"
-                :class="`viewer-table__th-sort-icon--${sortDirectionFor(column.index)}`"
-                viewBox="0 0 10 10"
-                width="10"
-                height="10"
-                aria-hidden="true"
+            <div class="viewer-table__th-inner">
+              <button
+                type="button"
+                class="viewer-table__th-button"
+                draggable="true"
+                @click="onHeaderClick(column.index, $event)"
+                @dragstart="onHeaderDragStart(pos, $event)"
+                @dragend="onHeaderDragEnd"
               >
-                <path
-                  v-if="sortDirectionFor(column.index) === 'asc'"
-                  d="M5 2 L9 8 L1 8 Z"
-                  fill="currentColor"
-                />
-                <path v-else d="M5 8 L1 2 L9 2 Z" fill="currentColor" />
-              </svg>
-              <span
-                v-if="sortPriorityFor(column.index) !== null"
-                class="viewer-table__th-priority"
-              >{{ sortPriorityFor(column.index) }}</span>
-            </button>
-            <button
-              type="button"
-              class="viewer-table__th-stats"
-              draggable="false"
-              :aria-label="`Ver estatísticas de ${column.label}`"
-              @click="onSelectStats(column.index)"
-            >
-              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-                <rect x="1" y="6" width="2.5" height="5" fill="currentColor" />
-                <rect x="5" y="3" width="2.5" height="8" fill="currentColor" />
-                <rect x="9" y="1" width="2.5" height="10" fill="currentColor" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              class="viewer-table__th-pin"
-              :class="{ 'viewer-table__th-pin--active': column.pinned }"
-              draggable="false"
-              :aria-pressed="column.pinned"
-              :aria-label="column.pinned ? `Desfixar coluna ${column.label}` : `Fixar coluna ${column.label}`"
-              @click="onTogglePin(column.index)"
-            >
-              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
-                <path
-                  d="M4 1.5 H8 L7.4 5 L9.5 6.8 H6.5 L5.8 10.5 H5.2 L4.5 6.8 H1.5 L3.6 5 Z"
-                  fill="currentColor"
-                />
-              </svg>
-            </button>
+                <span class="viewer-table__th-label">{{ column.label }}</span>
+                <span class="viewer-table__th-type">{{ column.type }}</span>
+                <svg
+                  v-if="sortDirectionFor(column.index)"
+                  class="viewer-table__th-sort-icon"
+                  :class="`viewer-table__th-sort-icon--${sortDirectionFor(column.index)}`"
+                  viewBox="0 0 10 10"
+                  width="10"
+                  height="10"
+                  aria-hidden="true"
+                >
+                  <path
+                    v-if="sortDirectionFor(column.index) === 'asc'"
+                    d="M5 2 L9 8 L1 8 Z"
+                    fill="currentColor"
+                  />
+                  <path v-else d="M5 8 L1 2 L9 2 Z" fill="currentColor" />
+                </svg>
+                <span
+                  v-if="sortPriorityFor(column.index) !== null"
+                  class="viewer-table__th-priority"
+                >{{ sortPriorityFor(column.index) }}</span>
+              </button>
+              <button
+                type="button"
+                class="viewer-table__th-stats"
+                draggable="false"
+                :aria-label="`Ver estatísticas de ${column.label}`"
+                @click="onSelectStats(column.index)"
+              >
+                <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                  <rect x="1" y="6" width="2.5" height="5" fill="currentColor" />
+                  <rect x="5" y="3" width="2.5" height="8" fill="currentColor" />
+                  <rect x="9" y="1" width="2.5" height="10" fill="currentColor" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="viewer-table__th-pin"
+                :class="{ 'viewer-table__th-pin--active': column.pinned }"
+                draggable="false"
+                :aria-pressed="column.pinned"
+                :aria-label="column.pinned ? `Desfixar coluna ${column.label}` : `Fixar coluna ${column.label}`"
+                @click="onTogglePin(column.index)"
+              >
+                <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+                  <path
+                    d="M4 1.5 H8 L7.4 5 L9.5 6.8 H6.5 L5.8 10.5 H5.2 L4.5 6.8 H1.5 L3.6 5 Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </button>
+            </div>
             <div
               class="viewer-table__th-resize"
               :class="{ 'viewer-table__th-resize--active': resizingIndex === column.index }"
@@ -495,9 +497,13 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table__th {
   position: relative;
   width: var(--col-w);
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  /* `table-cell` explícito (não o `flex` que os filhos precisam): o `<th>` é
+     célula real dentro da linha `display: table` (table-layout: fixed) — um
+     `display: flex` aqui escaparia do contexto de tabela e empilharia os
+     cabeçalhos verticalmente. O layout flex do conteúdo vive em
+     `.viewer-table__th-inner`. */
+  display: table-cell;
+  vertical-align: middle;
   padding: 10px 12px;
   font-family: var(--font);
   font-size: 11px;
@@ -508,6 +514,13 @@ const isEmpty = computed(() => props.rows.length === 0)
   border-bottom: 1px solid var(--border);
   /* Divisor vertical entre colunas (cara de grade, fiel ao design). */
   border-right: 1px solid var(--border);
+}
+
+.viewer-table__th-inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 /* Handle de redimensionamento (RF-04): faixa fina na borda direita do cabeçalho,

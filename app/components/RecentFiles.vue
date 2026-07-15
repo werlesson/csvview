@@ -95,6 +95,7 @@ function onOpen(id: number): void {
 }
 
 .recents__title {
+  flex: none;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -102,13 +103,19 @@ function onOpen(id: number): void {
   color: var(--text-3);
 }
 
+/* Quando o pai (.upload__recents em index.vue) tem altura definida, a lista
+   ocupa o espaço restante e ganha scroll próprio em vez de empurrar a
+   página — só ela rola quando há muitos arquivos recentes. */
 .recents__list {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 10px;
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
 }
 
 .recent {
