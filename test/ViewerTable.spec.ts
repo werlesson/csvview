@@ -57,6 +57,40 @@ describe('ViewerTable', () => {
     expect(headers[2]!.classes()).toContain('viewer-table__th--numeric')
   })
 
+  // RF-05: colunas inteira e decimal (ambas type === 'number') mantêm o
+  // alinhamento à direita; text/date/boolean/email/url NÃO recebem. O
+  // cabeçalho e a célula (CsvCell :numeric, ViewerTable.vue:119) compartilham
+  // a mesma condição `column.type === 'number'`, logo o cabeçalho prova o
+  // gating de ambos (paridade com o caso number acima).
+  it('alinha à direita colunas inteira e decimal; demais tipos não', () => {
+    // integer e decimal são ambos inferidos como `number` pelo motor (a
+    // distinção vive em NumericStats.numericKind, não em ViewerColumn.type).
+    const columns: ViewerColumn[] = [
+      { index: 0, label: 'qtd', type: 'number', visible: true }, // inteira
+      { index: 1, label: 'preco', type: 'number', visible: true }, // decimal
+      { index: 2, label: 'name', type: 'text', visible: true },
+      { index: 3, label: 'created', type: 'date', visible: true },
+      { index: 4, label: 'ativo', type: 'boolean', visible: true },
+      { index: 5, label: 'email', type: 'email', visible: true },
+      { index: 6, label: 'site', type: 'url', visible: true },
+    ]
+    const rows = [
+      ['1', '1.5', 'Ana', '2020-01-01', 'sim', 'a@b.com', 'https://x.io'],
+      ['2', '2.75', 'Bruno', '2021-12-31', 'não', 'c@d.org', 'http://y.io/p'],
+    ]
+
+    const wrapper = mount(ViewerTable, { props: { columns, rows } })
+    const headers = wrapper.findAll('.viewer-table__th')
+
+    // Apenas inteira/decimal (type === 'number') alinhadas à direita.
+    expect(headers[0]!.classes()).toContain('viewer-table__th--numeric') // inteira
+    expect(headers[1]!.classes()).toContain('viewer-table__th--numeric') // decimal
+    // text/date/boolean/email/url NÃO recebem alinhamento à direita.
+    for (const i of [2, 3, 4, 5, 6]) {
+      expect(headers[i]!.classes()).not.toContain('viewer-table__th--numeric')
+    }
+  })
+
   it('exibe o estado "nenhuma linha encontrada" quando não há linhas', () => {
     const wrapper = mount(ViewerTable, {
       props: { columns: makeColumns(), rows: [] },

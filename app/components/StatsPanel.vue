@@ -25,18 +25,42 @@ const props = defineProps<{
   stats: ColumnStats | null
 }>()
 
-/** Rótulos em pt para o tipo inferido, fiéis ao painel (`número`/`data`/`texto`). */
+/**
+ * Rótulos em pt-BR para cada tipo inferido, exaustivo sobre `ColumnType`. Para
+ * o tipo base `number` a distinção inteiro/decimal é resolvida à parte, a
+ * partir de `numericKind` (ver `typeLabel`); `número` é o fallback quando não
+ * há métricas numéricas.
+ */
 const TYPE_LABELS: Record<ColumnType, string> = {
   number: 'número',
   date: 'data',
+  boolean: 'booleano',
+  email: 'e-mail',
+  url: 'URL',
   text: 'texto',
+}
+
+/** Rótulos pt-BR da distinção inteiro/decimal (`NumericStats.numericKind`). */
+const NUMERIC_KIND_LABELS: Record<'integer' | 'decimal', string> = {
+  integer: 'inteiro',
+  decimal: 'decimal',
 }
 
 const hasSelection = computed(() => props.stats !== null)
 
-const typeLabel = computed(() =>
-  props.stats ? TYPE_LABELS[props.stats.type] : '',
-)
+/**
+ * Rótulo exibido no badge. Para colunas numéricas deriva de `numericKind`
+ * (`inteiro`/`decimal`); para os demais tipos usa `TYPE_LABELS`. `número`
+ * permanece como fallback quando a coluna é `number` sem métricas numéricas.
+ */
+const typeLabel = computed(() => {
+  const stats = props.stats
+  if (!stats) return ''
+  if (stats.type === 'number' && stats.numeric) {
+    return NUMERIC_KIND_LABELS[stats.numeric.numericKind]
+  }
+  return TYPE_LABELS[stats.type]
+})
 
 /** As métricas numéricas só existem quando o tipo inferido é `number`. */
 const numeric = computed(() => props.stats?.numeric ?? null)
@@ -122,6 +146,18 @@ function signClass(value: number): string {
             <dt class="stats-panel__row-label">Média</dt>
             <dd class="stats-panel__row-value" :class="signClass(numeric.mean)">
               {{ formatNumber(numeric.mean) }}
+            </dd>
+          </div>
+          <div class="stats-panel__row" data-metric="sum">
+            <dt class="stats-panel__row-label">Soma</dt>
+            <dd class="stats-panel__row-value" :class="signClass(numeric.sum)">
+              {{ formatNumber(numeric.sum) }}
+            </dd>
+          </div>
+          <div class="stats-panel__row" data-metric="median">
+            <dt class="stats-panel__row-label">Mediana</dt>
+            <dd class="stats-panel__row-value" :class="signClass(numeric.median)">
+              {{ formatNumber(numeric.median) }}
             </dd>
           </div>
         </dl>

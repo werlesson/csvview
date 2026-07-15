@@ -3,12 +3,20 @@ import { mount } from '@vue/test-utils'
 import StatsPanel from '~/components/StatsPanel.vue'
 import { computeColumnStats } from '~/services/columnStats'
 
-/** Coluna numérica de exemplo (com uma célula vazia e um valor repetido). */
+/** Coluna numérica inteira de exemplo (com uma célula vazia e um valor repetido). */
 const NUMERIC_VALUES = ['1', '2', '2', '3', '', '10']
+/** Coluna numérica decimal de exemplo. */
+const DECIMAL_VALUES = ['1.5', '2', '3.25', '']
 /** Coluna de texto de exemplo. */
 const TEXT_VALUES = ['Ana', 'Bruno', 'Ana', '']
 /** Coluna de datas de exemplo. */
 const DATE_VALUES = ['2020-01-01', '2021-12-31', '']
+/** Coluna booleana de exemplo. */
+const BOOLEAN_VALUES = ['sim', 'não', 'sim', '']
+/** Coluna de e-mails de exemplo. */
+const EMAIL_VALUES = ['a@b.com', 'c@d.org', '']
+/** Coluna de URLs de exemplo. */
+const URL_VALUES = ['https://x.io', 'http://y.io/p', '']
 
 function mountFor(label: string, values: string[]) {
   return mount(StatsPanel, {
@@ -25,9 +33,9 @@ describe('StatsPanel', () => {
     expect(wrapper.find('.stats-panel__content').exists()).toBe(false)
   })
 
-  it('mostra o rótulo e o tipo inferido em pt (número/data/texto)', () => {
+  it('mostra o rótulo e o tipo inferido em pt (inteiro/data/texto)', () => {
     expect(mountFor('amount', NUMERIC_VALUES).find('[data-type]').text()).toBe(
-      'número',
+      'inteiro',
     )
     expect(mountFor('name', TEXT_VALUES).find('[data-type]').text()).toBe(
       'texto',
@@ -38,6 +46,25 @@ describe('StatsPanel', () => {
 
     const numeric = mountFor('amount', NUMERIC_VALUES)
     expect(numeric.find('.stats-panel__title').text()).toBe('amount')
+  })
+
+  it('exibe rótulos pt-BR dos novos tipos (booleano/e-mail/URL)', () => {
+    expect(mountFor('ativo', BOOLEAN_VALUES).find('[data-type]').text()).toBe(
+      'booleano',
+    )
+    expect(mountFor('email', EMAIL_VALUES).find('[data-type]').text()).toBe(
+      'e-mail',
+    )
+    expect(mountFor('site', URL_VALUES).find('[data-type]').text()).toBe('URL')
+  })
+
+  it('deriva o rótulo numérico de numericKind (inteiro vs decimal)', () => {
+    expect(mountFor('amount', NUMERIC_VALUES).find('[data-type]').text()).toBe(
+      'inteiro',
+    )
+    expect(mountFor('price', DECIMAL_VALUES).find('[data-type]').text()).toBe(
+      'decimal',
+    )
   })
 
   it('mostra as quatro métricas gerais, com valores do motor da Fase 5', () => {
@@ -81,6 +108,25 @@ describe('StatsPanel', () => {
     expect(text.find('[data-metric="mean"]').exists()).toBe(false)
   })
 
+  it('mostra soma e mediana com os valores do motor para colunas numéricas', () => {
+    const numeric = mountFor('amount', NUMERIC_VALUES)
+    const stats = computeColumnStats(NUMERIC_VALUES)
+
+    expect(numeric.find('[data-metric="sum"]').exists()).toBe(true)
+    expect(numeric.find('[data-metric="median"]').exists()).toBe(true)
+    expect(numeric.find('[data-metric="sum"]').text()).toContain(
+      String(stats.numeric!.sum),
+    )
+    expect(numeric.find('[data-metric="median"]').text()).toContain(
+      String(stats.numeric!.median),
+    )
+
+    // Colunas não-numéricas não exibem soma nem mediana.
+    const text = mountFor('name', TEXT_VALUES)
+    expect(text.find('[data-metric="sum"]').exists()).toBe(false)
+    expect(text.find('[data-metric="median"]').exists()).toBe(false)
+  })
+
   it('renderiza o histograma só para colunas numéricas', () => {
     const numeric = mountFor('amount', NUMERIC_VALUES)
     expect(numeric.find('[data-section="histogram"]').exists()).toBe(true)
@@ -98,7 +144,7 @@ describe('StatsPanel', () => {
       props: { label: 'amount', stats: computeColumnStats(NUMERIC_VALUES) },
     })
 
-    expect(wrapper.find('[data-type]').text()).toBe('número')
+    expect(wrapper.find('[data-type]').text()).toBe('inteiro')
     expect(wrapper.find('[data-section="histogram"]').exists()).toBe(true)
 
     await wrapper.setProps({
