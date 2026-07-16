@@ -173,3 +173,37 @@ describe('viewer.vue — fiação dos filtros (Fase 4, T06)', () => {
     expect(setItemSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('viewer.vue — fiação da exportação (T06)', () => {
+  beforeEach(() => {
+    useCurrentDataset().clearDataset()
+  })
+
+  afterEach(() => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('clicar em "Exportar" na toolbar abre o ExportModal; fechar reverte para fechado', async () => {
+    const wrapper = await mountViewer()
+
+    expect(wrapper.find('.export-overlay').exists()).toBe(false)
+
+    await wrapper.get('.toolbar__export').trigger('click')
+    expect(wrapper.find('.export-overlay').exists()).toBe(true)
+
+    await wrapper.get('.export-overlay__cancel').trigger('click')
+    expect(wrapper.find('.export-overlay').exists()).toBe(false)
+  })
+
+  it('o ExportModal recebe filteredRows/dataset.rows/displayColumns/meta.name correntes do Viewer', async () => {
+    const wrapper = await mountViewer()
+
+    await wrapper.get('.toolbar__export').trigger('click')
+
+    expect(wrapper.get('.export-overlay__title').text()).toBe('Exportar dados')
+    expect(wrapper.text()).toContain('Linhas filtradas (4)')
+    expect(wrapper.text()).toContain('Todas as linhas (4)')
+  })
+})
