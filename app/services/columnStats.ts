@@ -456,6 +456,45 @@ export function computeColumnStats(values: readonly Cell[]): ColumnStats {
   return stats
 }
 
+/**
+ * Mapeia, para uma coluna, cada valor preenchido (após `trim`) → nº de
+ * ocorrências entre as células preenchidas. Uma única passagem O(N), pulando
+ * células vazias (`isEmptyCell`, mesma convenção de `computeColumnStats`) —
+ * sem comparação par a par (RNF-02). Distinto do agregado
+ * `ColumnStats.duplicates` (`filled - unique`): aqui é possível saber o N
+ * específico de cada valor, necessário para o badge "dup ×N" (RF-02).
+ */
+export function computeColumnDuplicateCounts(
+  values: readonly Cell[],
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    if (isEmptyCell(value)) continue
+    const key = String(value).trim()
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * Verifica se uma linha contém ao menos uma célula cujo valor está duplicado
+ * na sua coluna, segundo os mapas já calculados por
+ * `computeColumnDuplicateCounts` (um por coluna, na mesma ordem de `row`).
+ * O(colunas): itera apenas as colunas da linha, sem varrer o dataset (RF-03).
+ */
+export function rowHasDuplicateValue(
+  row: readonly Cell[],
+  duplicateCounts: readonly Map<string, number>[],
+): boolean {
+  for (let i = 0; i < row.length; i += 1) {
+    const value = row[i]
+    if (isEmptyCell(value)) continue
+    const count = duplicateCounts[i]?.get(String(value).trim())
+    if (count !== undefined && count > 1) return true
+  }
+  return false
+}
+
 /** Dataset mínimo necessário para o cálculo por coluna. */
 export interface StatsDataset {
   header: string[]

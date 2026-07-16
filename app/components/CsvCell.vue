@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { isEmptyCell } from '~/services/columnStats'
 
 const props = defineProps<{
   value: string | number | null | undefined
@@ -15,13 +16,9 @@ const props = defineProps<{
   selected?: boolean
 }>()
 
-const display = computed(() =>
-  props.value === null || props.value === undefined || props.value === ''
-    ? '—'
-    : String(props.value),
-)
+const isEmpty = computed(() => isEmptyCell(props.value))
 
-const isEmpty = computed(() => display.value === '—')
+const display = computed(() => (isEmpty.value ? 'empty' : String(props.value)))
 </script>
 
 <template>
@@ -34,7 +31,8 @@ const isEmpty = computed(() => display.value === '—')
     ]"
     :title="isEmpty ? undefined : display"
   >
-    {{ display }}
+    <span v-if="isEmpty" class="csv-cell__empty-label">{{ display }}</span>
+    <template v-else>{{ display }}</template>
   </td>
 </template>
 
@@ -60,8 +58,22 @@ const isEmpty = computed(() => display.value === '—')
   vertical-align: middle;
 }
 
-/* Célula vazia (—): tom apagado, itálico. */
+/* Célula vazia: padrão hachurado (listras diagonais) + rótulo "empty" (RF-01). */
 .csv-cell--empty {
+  position: relative;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--border) 0,
+    var(--border) 4px,
+    var(--bg-2) 4px,
+    var(--bg-2) 8px
+  );
+}
+
+.csv-cell__empty-label {
+  display: block;
+  width: 100%;
+  text-align: center;
   color: var(--text-3);
   font-style: italic;
 }

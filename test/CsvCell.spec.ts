@@ -9,10 +9,35 @@ describe('CsvCell', () => {
     expect(wrapper.classes()).not.toContain('csv-cell--empty')
   })
 
-  it('renders a placeholder for empty values', () => {
+  it('renders a hachured placeholder with the "empty" label for empty values', () => {
     const wrapper = mount(CsvCell, { props: { value: null } })
-    expect(wrapper.text()).toBe('—')
+    expect(wrapper.text()).toBe('empty')
+    expect(wrapper.text()).not.toBe('—')
     expect(wrapper.classes()).toContain('csv-cell--empty')
+    expect(wrapper.find('.csv-cell__empty-label').exists()).toBe(true)
+  })
+
+  it.each([null, undefined, ''])(
+    'treats %j as empty and never renders just "—"',
+    (value) => {
+      const wrapper = mount(CsvCell, { props: { value } })
+      expect(wrapper.text()).toBe('empty')
+      expect(wrapper.classes()).toContain('csv-cell--empty')
+    },
+  )
+
+  it('keeps csv-cell--numeric on an empty cell in a numeric column', () => {
+    const wrapper = mount(CsvCell, { props: { value: null, numeric: true } })
+    expect(wrapper.classes()).toContain('csv-cell--numeric')
+    expect(wrapper.classes()).toContain('csv-cell--empty')
+    expect(wrapper.text()).toBe('empty')
+  })
+
+  it('keeps csv-cell--selected on an empty cell in a selected column', () => {
+    const wrapper = mount(CsvCell, { props: { value: null, selected: true } })
+    expect(wrapper.classes()).toContain('csv-cell--selected')
+    expect(wrapper.classes()).toContain('csv-cell--empty')
+    expect(wrapper.text()).toBe('empty')
   })
 
   it('coerces numbers to text', () => {

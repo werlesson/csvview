@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildHistogram,
+  computeColumnDuplicateCounts,
   computeColumnStats,
   computeDatasetStats,
   histogramBinCount,
@@ -12,6 +13,7 @@ import {
   numericKindOf,
   parseDate,
   parseNumber,
+  rowHasDuplicateValue,
 } from '~/services/columnStats'
 
 describe('inferência de tipo e estatísticas de coluna', () => {
@@ -402,6 +404,46 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       const [, b] = computeDatasetStats(dataset)
       expect(b?.nulls).toBe(1)
       expect(b?.filled).toBe(1)
+    })
+  })
+
+  describe('duplicate-counts', () => {
+    it('mapeia cada valor preenchido para o nº de ocorrências na coluna', () => {
+      const counts = computeColumnDuplicateCounts(['A', 'B', 'A', 'A'])
+
+      expect(counts.get('A')).toBe(3)
+      expect(counts.get('B')).toBe(1)
+      expect(counts.size).toBe(2)
+    })
+
+    it('ignora células vazias (null/undefined/string em branco) na contagem', () => {
+      const counts = computeColumnDuplicateCounts([
+        'A',
+        null,
+        undefined,
+        '',
+        '   ',
+        'A',
+      ])
+
+      expect(counts.get('A')).toBe(2)
+      expect(counts.size).toBe(1)
+    })
+
+    it('rowHasDuplicateValue retorna true quando alguma célula da linha é duplicada na sua coluna', () => {
+      const duplicateCounts = [
+        computeColumnDuplicateCounts(['A', 'B', 'A', 'A']), // coluna 0
+        computeColumnDuplicateCounts(['X', 'Y', 'Z', 'W']), // coluna 1
+      ]
+
+      expect(rowHasDuplicateValue(['A', 'X'], duplicateCounts)).toBe(true)
+      expect(rowHasDuplicateValue(['B', 'Y'], duplicateCounts)).toBe(false)
+    })
+
+    it('rowHasDuplicateValue retorna false quando nenhuma célula é duplicada', () => {
+      const duplicateCounts = [computeColumnDuplicateCounts(['A', 'B', 'C'])]
+
+      expect(rowHasDuplicateValue(['B'], duplicateCounts)).toBe(false)
     })
   })
 })
