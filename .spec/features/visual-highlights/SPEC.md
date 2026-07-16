@@ -4,7 +4,7 @@
 - Source: developer description via /plan
 - Service: csvview (única app, SPA client-side)
 - Tier: standard
-- Version: 1.1
+- Version: 1.2
 - Architecture references: `AGENTS.md`, `docs/agents/architecture.md`, `docs/agents/domain_rules.md`
 
 ## Context
@@ -124,14 +124,23 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
   - AC: uma célula de coluna `number` com valor `-320` exibe o texto na cor `--error`; uma célula
     da mesma coluna com valor `+149` não recebe essa cor.
 
-- RF-05 [Conditional]: SE uma coluna tem tipo inferido `date` E uma célula preenchida daquela
-  coluna NÃO satisfaz `isDateValue` (`app/services/columnStats.ts:136`), ENTÃO a célula SHALL
-  exibir uma borda laranja ao redor da célula, um ícone de alerta e o valor bruto (não
-  reformatado) prefixado pelo ícone (ex.: "⚠ 05/13/26").
-  - AC: numa coluna `date` cujas demais células são ISO `YYYY-MM-DD`, uma célula com o valor
-    bruto `05/13/26` (mês 13 inválido, reprovado por `isDateValue`) exibe borda laranja e o texto
-    "⚠ 05/13/26" exatamente como armazenado; uma célula com `2026-01-04` (válida) não recebe essa
-    borda/ícone.
+- RF-05 [Conditional] (revisado em v1.2 — ver Amendments): SE uma coluna **parece coluna de data**
+  (novo predicado `isDateLikeColumn`, não o `ColumnType` agregado de
+  `inferColumnType`/`app/services/columnStats.ts:301` — ver justificativa em Amendments) E uma
+  célula preenchida daquela coluna NÃO satisfaz `isDateValue`
+  (`app/services/columnStats.ts:136`), ENTÃO a célula SHALL exibir uma borda laranja ao redor da
+  célula, um ícone de alerta e o valor bruto (não reformatado) prefixado pelo ícone (ex.: "⚠
+  05/13/26"). `isDateLikeColumn(values)`: coluna "parece data" quando há ao menos uma célula
+  preenchida E mais da metade (`> 0.5`) das células preenchidas satisfaz `isDateValue` — helper
+  puro novo em `app/services/columnStats.ts`, usado **somente** por este destaque; não altera
+  `inferColumnType`/`ColumnType` (usados por ordenação, `StatsPanel` e filtros futuros, fora do
+  escopo desta feature).
+  - AC: numa coluna majoritariamente ISO `YYYY-MM-DD` (≥ 2 de 3 valores preenchidos válidos), uma
+    célula com o valor bruto `05/13/26` (não bate em `isDateValue` — nem ISO nem DMY com ano de 4
+    dígitos) exibe borda laranja e o texto "⚠ 05/13/26" exatamente como armazenado; uma célula com
+    `2026-01-04` (válida) na mesma coluna não recebe essa borda/ícone. Uma coluna cuja maioria das
+    células preenchidas NÃO é reconhecida como data (`isDateLikeColumn` retorna `false`) não aplica
+    este destaque a nenhuma célula, mesmo que `ColumnType` dessa coluna seja `text`.
 
 - RF-06 [Ubiquitous]: A `ViewerTable` SHALL aplicar os quatro destaques (RF-01 a RF-05)
   automaticamente a toda célula/linha renderizada, sem exigir nenhuma ação do usuário e sem
@@ -197,7 +206,7 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
 | RF-02 | Célula com valor duplicado na coluna exibe badge "dup ×N" com N correto | Sim |
 | RF-03 | Linha com célula duplicada recebe destaque de fundo distinguível na linha inteira | Sim |
 | RF-04 | Célula numérica negativa exibe texto na cor `--error` | Sim |
-| RF-05 | Célula de data inválida exibe borda laranja + ícone + valor bruto prefixado | Sim |
+| RF-05 | Célula de data inválida (coluna `isDateLikeColumn`) exibe borda laranja + ícone + valor bruto prefixado | Sim |
 | RF-06 | Todos os destaques aplicáveis aparecem no primeiro render, sem interação do usuário | Sim |
 | UI-01 | Legenda fixa no topo com 4 pares swatch+rótulo, sempre visível | Sim |
 | RNF-01 | Seleção de coluna, alinhamento numérico e pin continuam funcionando sem regressão | Sim |
@@ -207,3 +216,25 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
 Nenhum marker pendente. O escopo da contagem de duplicados (RF-02/RF-03) foi resolvido: o
 helper opera sobre o dataset completo, independente de filtros/busca (ver decisão incorporada em
 RF-02/RF-03).
+
+## Amendments
+
+### v1.2 — RF-05 inatingível com `column.type === 'date'` (achado em verificação pós-implementação)
+Após as 5 fases originais implementadas (T01–T09) e verificadas com `yarn test` (443/443), a
+verificação manual em navegador (carregando um CSV real com uma data fora do padrão ISO numa
+coluna majoritariamente ISO) mostrou que RF-05 **nunca disparava**: `ViewerTable.vue` fazia
+`invalidDate = column.type === 'date' && !isEmptyCell(value) && !isDateValue(value)`, mas
+`inferColumnType` (`app/services/columnStats.ts:301`, motor de `rich-types-and-stats`, não alterado
+por esta feature) só tipa uma coluna como `date` quando **100%** das células preenchidas satisfazem
+`isDateValue`. Ou seja, a própria existência de uma célula que reprova `isDateValue` — a condição
+que RF-05 precisa detectar — impede logicamente a coluna de ser tipada `date` em primeiro lugar.
+`RF-05` era, portanto, inatingível com dados reais (confirmado também em
+`test/ViewerTable.spec.ts:625,631`, cuja fixture força `{ type: 'date' }` manualmente numa coluna
+contendo `'05/13/26'` — um estado que `useViewer`/`inferColumnType` nunca produz a partir de um
+dataset real, o que explica por que a suíte "verde" não pegou o problema).
+
+**Resolução (confirmada com o developer):** um novo predicado `isDateLikeColumn`, usado **somente**
+pelo destaque RF-05, substitui o gate `column.type === 'date'`. `ColumnType`/`inferColumnType`
+permanecem inalterados — usados por ordenação, `StatsPanel` e filtros futuros, fora do escopo desta
+feature. Ver RF-05 (revisado acima) para a definição do predicado. Task de implementação: T10
+(`PLAN.md`), Fase 6 (`PHASES.md`).

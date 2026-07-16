@@ -151,3 +151,34 @@ Antes de implementar, leia:
       legenda aparecem simultaneamente no primeiro render montado.
       Testes: montagem única com dataset fixo, asserção simultânea dos quatro destaques + legenda,
       sem nenhum `trigger`/`click` antes das asserções.
+
+## Phase 6: Correção do gate inatingível de RF-05 (achado em verificação pós-implementação)
+
+Antes de implementar, leia:
+1. `.spec/features/visual-highlights/SPEC.md` — § Amendments v1.2 (diagnóstico completo do achado)
+2. `.spec/features/visual-highlights/PLAN.md` — T10, decomposição e riscos
+
+- [ ] T10 — `isDateLikeColumn`: corrigir o gate inatingível de RF-05
+      Arquivos: `app/services/columnStats.ts`, `app/components/ViewerTable.vue`,
+      `test/columnStats.spec.ts`, `test/ViewerTable.spec.ts`
+      Mudança: verificação manual em navegador mostrou que RF-05 nunca dispara: `invalidDateFor`
+      (`ViewerTable.vue:346-347`) exige `column.type === 'date'`, mas `inferColumnType` só tipa a
+      coluna como `date` quando 100% das células preenchidas satisfazem `isDateValue` — a própria
+      célula "inválida" que RF-05 precisa detectar impede a coluna de ser tipada `date`. Adicionar
+      `isDateLikeColumn(values): boolean` (puro, O(N), em `app/services/columnStats.ts`, ao lado de
+      `isDateValue`): `true` quando há ao menos uma célula preenchida E mais da metade (`> 0.5`)
+      das células preenchidas satisfaz `isDateValue`. NÃO altera `inferColumnType`/`ColumnType`
+      (usados por ordenação/StatsPanel/filtros, fora do escopo). Em `ViewerTable.vue`,
+      `invalidDateFor` passa a usar `isDateLikeColumn` (calculado uma vez por coluna, não por
+      célula renderizada) no lugar de `column.type === 'date'`. Atualizar a fixture de
+      `test/ViewerTable.spec.ts:620-632` para não forçar `type: 'date'` manualmente — o teste deve
+      validar que `isDateLikeColumn` decide o destaque a partir dos valores reais da coluna.
+      Cobre: RF-05 (correção)
+      Acceptance criteria: numa coluna com maioria de valores ISO válidos e uma célula
+      `'05/13/26'`, somente essa célula recebe `invalidDate=true`, mesmo com `column.type`
+      computado como `'text'` (dataset real); uma coluna cuja maioria falha `isDateValue` não
+      aplica o destaque a nenhuma célula; suíte completa de `ViewerTable.spec.ts`
+      (seleção/pin/numérico/virtualização, RNF-01) continua passando sem alteração de asserção.
+      Testes: `test/columnStats.spec.ts` — `describe('isDateLikeColumn')` (maioria válida → true;
+      maioria inválida → false; só vazias → false; uma passagem O(N)). `test/ViewerTable.spec.ts`
+      — RF-05 revisado com dataset real (sem `type` forçado na fixture).
