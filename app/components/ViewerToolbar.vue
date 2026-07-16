@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import SearchInput from '~/components/SearchInput.vue'
 import Dropdown from '~/components/Dropdown.vue'
 import ColumnChip from '~/components/ColumnChip.vue'
+import Badge from '~/components/Badge.vue'
 import { formatRowCount } from '~/services/formatFile'
 import type { ViewerColumn } from '~/composables/useViewer'
 
@@ -10,10 +11,10 @@ import type { ViewerColumn } from '~/composables/useViewer'
  * Toolbar do **Viewer** (Fase 7, US-2.1).
  *
  * Fiel à tela de referência (Screen 2): à esquerda o campo de busca
- * "Buscar em tudo…" e o seletor de colunas; à direita, o contador de linhas.
- * O nome do arquivo fica na barra de título (header do layout). Os controles
- * de features adiadas (Filtros, Exportar) ficam **fora do escopo do MVP** e não
- * são renderizados aqui.
+ * "Buscar em tudo…", o controle **Filtros** (badge de contagem, UI-02) e o
+ * seletor de colunas; à direita, o contador de linhas. O nome do arquivo fica
+ * na barra de título (header do layout). O controle de **Exportar**
+ * (feature adiada) fica **fora do escopo do MVP** e não é renderizado aqui.
  *
  * Cada item do menu "Colunas" reusa {@link ColumnChip} (variação `pinned`) e
  * expõe um controle de fixar/desfixar equivalente ao botão de pin do
@@ -22,20 +23,32 @@ import type { ViewerColumn } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
-const props = defineProps<{
-  /** Total de linhas do dataset (sem filtro). */
-  rowCount: number
-  /** Colunas do dataset, com tipo, visibilidade e fixação atuais. */
-  columns: ViewerColumn[]
-  /** Termo de busca (suporta `v-model:search`). */
-  search: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** Total de linhas do dataset (sem filtro). */
+    rowCount: number
+    /** Colunas do dataset, com tipo, visibilidade e fixação atuais. */
+    columns: ViewerColumn[]
+    /** Termo de busca (suporta `v-model:search`). */
+    search: string
+    /** Nº de filtros de coluna ativos (chips) — badge no controle "Filtros" (UI-02). */
+    activeFilterCount?: number
+  }>(),
+  {
+    activeFilterCount: 0,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'update:search', value: string): void
   (e: 'toggle-column', index: number): void
   (e: 'toggle-pin', index: number): void
+  (e: 'toggle-filters'): void
 }>()
+
+function onToggleFilters(): void {
+  emit('toggle-filters')
+}
 
 function onSearch(value: string): void {
   emit('update:search', value)
@@ -75,6 +88,34 @@ function onTogglePin(index: number): void {
           @update:model-value="onSearch"
         />
       </div>
+
+      <button
+        type="button"
+        class="toolbar__filters"
+        aria-label="Filtros"
+        @click="onToggleFilters"
+      >
+        <svg
+          class="toolbar__icon"
+          viewBox="0 0 16 16"
+          width="15"
+          height="15"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M2 3 H14 L9.5 8.2 V13 L6.5 11.5 V8.2 Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>Filtros</span>
+        <Badge v-if="activeFilterCount > 0" variant="accent" class="toolbar__filters-badge">
+          {{ activeFilterCount }}
+        </Badge>
+      </button>
 
       <Dropdown label="Colunas" @close="onColumnsMenuClose">
         <template #trigger>
@@ -191,6 +232,33 @@ function onTogglePin(index: number): void {
 .toolbar__icon {
   flex: none;
   color: var(--text-2);
+}
+
+/* Controle "Filtros" (UI-02): mesma aparência do gatilho do Dropdown, com
+   badge de contagem (Badge.vue) quando há filtros ativos. */
+.toolbar__filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__filters:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.toolbar__filters-badge {
+  padding: 2px 6px;
 }
 
 /* Busca do menu "Colunas": mesmo `SearchInput` do campo principal, num

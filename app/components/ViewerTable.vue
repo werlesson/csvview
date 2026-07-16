@@ -58,8 +58,10 @@ const props = withDefaults(
     selectedIndex?: number | null
     /** Chaves de ordenação ativas, em ordem de prioridade decrescente (RF-01, RF-02). */
     sortKeys?: SortKey[]
+    /** Há filtros de coluna e/ou busca ativos (RF-06, UI-03) — muda a dica e a ação do estado vazio. */
+    hasActiveFilters?: boolean
   }>(),
-  { selectedIndex: null, sortKeys: () => [] },
+  { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false },
 )
 
 const emit = defineEmits<{
@@ -75,7 +77,14 @@ const emit = defineEmits<{
   (e: 'reorder', from: number, to: number): void
   /** Botão de pin do cabeçalho acionado: alterna a fixação da coluna (índice original, RF-06). */
   (e: 'toggle-pin', index: number): void
+  /** Ação "Limpar filtros" do estado vazio acionada (RF-06, UI-03). */
+  (e: 'clear-filters'): void
 }>()
+
+/** Ação "Limpar filtros" do estado vazio (RF-06, UI-03). */
+function onClearFilters(): void {
+  emit('clear-filters')
+}
 
 /** Clique no cabeçalho: ordena (RF-01), ou adiciona à ordenação multi-coluna com Shift (RF-02). */
 function onHeaderClick(index: number, event: MouseEvent): void {
@@ -438,9 +447,20 @@ const isEmpty = computed(() => props.rows.length === 0)
 
     <div v-if="isEmpty" class="viewer-table__empty" role="status">
       <p class="viewer-table__empty-title">Nenhuma linha encontrada</p>
-      <p class="viewer-table__empty-hint">
+      <p v-if="hasActiveFilters" class="viewer-table__empty-hint">
+        Nenhuma linha casa com a busca e/ou os filtros aplicados. Ajuste os critérios ou limpe os filtros.
+      </p>
+      <p v-else class="viewer-table__empty-hint">
         Nenhuma linha casa com a busca. Ajuste o termo ou limpe o campo.
       </p>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        class="viewer-table__empty-clear"
+        @click="onClearFilters"
+      >
+        Limpar filtros
+      </button>
     </div>
   </div>
 </template>
@@ -791,5 +811,20 @@ const isEmpty = computed(() => props.rows.length === 0)
 .viewer-table__empty-hint {
   font-size: 13px;
   color: var(--text-3);
+}
+
+/* Ação de limpar filtros no estado vazio (RF-06, UI-03): visível apenas
+   quando há filtros ativos, restaura o dataset ao acionar `clear-filters`. */
+.viewer-table__empty-clear {
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: var(--bg-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
 }
 </style>
