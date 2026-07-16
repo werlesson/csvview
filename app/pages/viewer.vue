@@ -78,7 +78,14 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
         @toggle-pin="togglePin"
       />
 
-      <StatsPanel :label="selectedLabel" :stats="selectedStats" />
+      <Transition name="stats-grow">
+        <StatsPanel
+          v-if="selectedStats"
+          :label="selectedLabel"
+          :stats="selectedStats"
+          @close="selectColumn(null)"
+        />
+      </Transition>
     </div>
   </section>
 </template>
@@ -127,6 +134,35 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 
   .viewer__body > .stats-panel {
     width: auto;
+  }
+}
+
+/* Abrir/fechar o painel de estatísticas (RF-06b/UI-03): a largura cresce de 0
+   até os 320px normais junto com um fade, dando o efeito de "crescer e
+   aparecer" pedido para abrir/fechar via botão de stats ou o "X" do painel.
+   Especificidade elevada (3 classes) para vencer `.viewer__body > .stats-panel`. */
+.viewer__body > .stats-panel.stats-grow-enter-active,
+.viewer__body > .stats-panel.stats-grow-leave-active {
+  transition:
+    width 0.26s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease,
+    padding-left 0.26s ease,
+    padding-right 0.26s ease;
+  overflow: hidden;
+}
+
+.viewer__body > .stats-panel.stats-grow-enter-from,
+.viewer__body > .stats-panel.stats-grow-leave-to {
+  width: 0;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewer__body > .stats-panel.stats-grow-enter-active,
+  .viewer__body > .stats-panel.stats-grow-leave-active {
+    transition-duration: 0s;
   }
 }
 </style>
