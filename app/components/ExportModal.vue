@@ -43,6 +43,8 @@ const {
   scopeCounts,
   downloadLabel,
   xlsxWarning,
+  downloadError,
+  isDownloading,
   download,
 } = useExportModal({
   filteredRows: () => props.filteredRows,
@@ -60,16 +62,24 @@ const FORMAT_TABS: Array<{ value: ExportFormat; label: string }> = [
   { value: 'sql', label: 'SQL' },
 ]
 
-/** Cancelar/"X"/backdrop/Escape: descarta a seleção, sem gerar nem baixar (RF-16). */
+/** Cancelar/"X"/backdrop/Escape: descarta a seleção, sem gerar nem baixar (RF-16). Ignorado durante um download em andamento. */
 function onDismiss(): void {
+  if (isDownloading.value) return
   resetSelection()
   emit('close')
 }
 
-/** "Baixar": aciona o download do formato/escopo/opções atuais e fecha o modal. */
+/**
+ * "Baixar": aciona o download do formato/escopo/opções atuais. Só fecha o
+ * modal em caso de sucesso — se `download()` falhar, `downloadError` fica
+ * populado e o modal permanece aberto exibindo a mensagem (RF-16 não se
+ * aplica a esse fluxo: dismiss explícito continua sendo o único que reseta).
+ */
 async function onDownload(): Promise<void> {
   await download()
-  emit('close')
+  if (!downloadError.value) {
+    emit('close')
+  }
 }
 
 // Foco inicial no modal ao abrir, para o Escape funcionar sem exigir clique antes.
@@ -105,6 +115,7 @@ watch(
             type="button"
             class="export-overlay__close"
             aria-label="Fechar exportação"
+            :disabled="isDownloading"
             @click="onDismiss"
           >
             <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
@@ -176,14 +187,27 @@ watch(
           </section>
 
           <p v-if="xlsxWarning" class="export-overlay__warning">{{ xlsxWarning }}</p>
+          <p v-if="downloadError" class="export-overlay__error">{{ downloadError }}</p>
         </div>
 
         <footer class="export-overlay__footer">
-          <button type="button" class="export-overlay__cancel" @click="onDismiss">
+          <button
+            type="button"
+            class="export-overlay__cancel"
+            :disabled="isDownloading"
+            @click="onDismiss"
+          >
             Cancelar
           </button>
-          <button type="button" class="export-overlay__download" @click="onDownload">
-            {{ downloadLabel }}
+          <button
+            type="button"
+            class="export-overlay__download"
+            :class="{ 'export-overlay__download--loading': isDownloading }"
+            :disabled="isDownloading"
+            @click="onDownload"
+          >
+            <span v-if="isDownloading" class="export-overlay__spinner" aria-hidden="true" />
+            {{ isDownloading ? 'Gerando…' : downloadLabel }}
           </button>
         </footer>
       </div>
@@ -369,6 +393,16 @@ watch(
   font-size: 13px;
 }
 
+.export-overlay__error {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--danger-soft, rgba(239, 68, 68, 0.12));
+  border: 1px solid var(--danger, #ef4444);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+}
+
 .export-overlay__footer {
   display: flex;
   gap: 10px;
@@ -378,6 +412,10 @@ watch(
 
 .export-overlay__cancel,
 .export-overlay__download {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   flex: 1;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
@@ -407,5 +445,32 @@ watch(
 .export-overlay__download:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+.export-overlay__cancel:disabled,
+.export-overlay__download:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.export-overlay__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: var(--accent-fg);
+  border-radius: 50%;
+  animation: export-overlay-spin 0.6s linear infinite;
+}
+
+@keyframes export-overlay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .export-overlay__spinner {
+    animation: none;
+  }
 }
 </style>

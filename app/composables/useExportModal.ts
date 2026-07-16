@@ -108,6 +108,10 @@ export function useExportModal(options: UseExportModalOptions) {
   const quoteAll = ref(false)
   /** Aviso de truncamento XLSX (RF-18), populado após `download()`. */
   const xlsxWarning = ref<string | null>(null)
+  /** Mensagem de erro quando `download()` falha (ex.: import dinâmico do `xlsx` falha). */
+  const downloadError = ref<string | null>(null)
+  /** `true` enquanto `download()` está gerando/baixando o arquivo (ex.: import dinâmico do `xlsx` em voo). */
+  const isDownloading = ref(false)
 
   /** Restaura os defaults (`csv`/`filtered`/`true`/`false`) — chamada em todo dismiss (RF-16). */
   function resetSelection(): void {
@@ -116,6 +120,7 @@ export function useExportModal(options: UseExportModalOptions) {
     includeHeader.value = true
     quoteAll.value = false
     xlsxWarning.value = null
+    downloadError.value = null
   }
 
   /** Toggles habilitados/desabilitados para o formato atual (RF-02 a RF-06, UI-03). */
@@ -148,6 +153,8 @@ export function useExportModal(options: UseExportModalOptions) {
    */
   async function download(): Promise<void> {
     xlsxWarning.value = null
+    downloadError.value = null
+    isDownloading.value = true
 
     const columns = toValue(options.displayColumns)
     const header = columns.map((column) => column.label)
@@ -155,33 +162,40 @@ export function useExportModal(options: UseExportModalOptions) {
     const baseName = stripExtension(toValue(options.fileName))
     const currentFormat = format.value
 
-    let content: string | ArrayBuffer
-    if (currentFormat === 'csv') {
-      content = generateCsv(header, rows, {
-        includeHeader: includeHeader.value,
-        quoteAll: quoteAll.value,
-      })
-    } else if (currentFormat === 'json') {
-      content = generateJson(header, rows)
-    } else if (currentFormat === 'md') {
-      content = generateMarkdown(header, rows)
-    } else if (currentFormat === 'sql') {
-      content = generateSql(header, rows, {
-        includeHeader: includeHeader.value,
-        tableName: deriveTableName(toValue(options.fileName)),
-      })
-    } else {
-      const result = await generateXlsx(header, rows, {
-        includeHeader: includeHeader.value,
-      })
-      content = result.buffer
-      if (result.truncated) {
-        xlsxWarning.value = `O arquivo foi truncado em ${formatRowCount(MAX_XLSX_ROWS)} linhas — limite máximo de uma planilha XLSX.`
+    try {
+      let content: string | ArrayBuffer
+      if (currentFormat === 'csv') {
+        content = generateCsv(header, rows, {
+          includeHeader: includeHeader.value,
+          quoteAll: quoteAll.value,
+        })
+      } else if (currentFormat === 'json') {
+        content = generateJson(header, rows)
+      } else if (currentFormat === 'md') {
+        content = generateMarkdown(header, rows)
+      } else if (currentFormat === 'sql') {
+        content = generateSql(header, rows, {
+          includeHeader: includeHeader.value,
+          tableName: deriveTableName(toValue(options.fileName)),
+        })
+      } else {
+        const result = await generateXlsx(header, rows, {
+          includeHeader: includeHeader.value,
+        })
+        content = result.buffer
+        if (result.truncated) {
+          xlsxWarning.value = `O arquivo foi truncado em ${formatRowCount(MAX_XLSX_ROWS)} linhas — limite máximo de uma planilha XLSX.`
+        }
       }
-    }
 
-    const blob = new Blob([content], { type: FORMAT_MIME[currentFormat] })
-    triggerDownload(blob, `${baseName}.${FORMAT_EXTENSIONS[currentFormat]}`)
+      const blob = new Blob([content], { type: FORMAT_MIME[currentFormat] })
+      triggerDownload(blob, `${baseName}.${FORMAT_EXTENSIONS[currentFormat]}`)
+    } catch (error) {
+      console.error('Falha ao gerar/baixar o arquivo de exportação:', error)
+      downloadError.value = `Não foi possível gerar o arquivo ${FORMAT_LABELS[currentFormat]}. Tente novamente.`
+    } finally {
+      isDownloading.value = false
+    }
   }
 
   return {
@@ -195,6 +209,8 @@ export function useExportModal(options: UseExportModalOptions) {
     downloadLabel,
     rowsForScope,
     xlsxWarning,
+    downloadError,
+    isDownloading,
     download,
   }
 }

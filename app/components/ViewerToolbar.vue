@@ -190,6 +190,7 @@ function onTogglePin(index: number): void {
     </div>
 
     <div class="toolbar__meta">
+      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
       <button
         type="button"
         class="toolbar__export"
@@ -223,7 +224,6 @@ function onTogglePin(index: number): void {
         </svg>
         <span>Exportar</span>
       </button>
-      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
     </div>
   </div>
 </template>
@@ -261,8 +261,8 @@ function onTogglePin(index: number): void {
   gap: 12px;
 }
 
-/* Controle "Exportar" (UI-04): mesma aparência do gatilho "Filtros", à
-   direita, entre os controles existentes e o contador de linhas. */
+/* Controle "Exportar" (UI-04): destaque primary (accent sólido), para se
+   diferenciar dos demais controles da toolbar como ação principal. */
 .toolbar__export {
   display: inline-flex;
   align-items: center;
@@ -271,17 +271,21 @@ function onTogglePin(index: number): void {
   font-size: 14px;
   font-weight: 500;
   padding: 8px 12px;
-  background: var(--bg-2);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .toolbar__export:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.toolbar__export .toolbar__icon {
+  color: var(--accent-fg);
 }
 
 .toolbar__count {
