@@ -4,6 +4,7 @@ import ViewerToolbar from '~/components/ViewerToolbar.vue'
 import ViewerTable from '~/components/ViewerTable.vue'
 import StatsPanel from '~/components/StatsPanel.vue'
 import FilterPanel from '~/components/FilterPanel.vue'
+import FilterChips from '~/components/FilterChips.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
 
@@ -52,10 +53,9 @@ const {
   filters,
   activeFilters,
   activeFilterCount,
-  addFilter,
-  updateFilter,
   removeFilter,
   clearFilters,
+  applyFilters,
   noResults,
   visibleRowCount,
 } = useViewer(() => dataset.value)
@@ -85,14 +85,14 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       @toggle-filters="onToggleFilters"
     />
 
+    <FilterChips :columns="columns" :filters="filters" @remove="removeFilter" />
+
     <FilterPanel
-      v-if="showFilters"
+      :open="showFilters"
       :columns="columns"
       :filters="filters"
-      @add="addFilter"
-      @update="updateFilter"
-      @remove="removeFilter"
-      @clear="clearFilters"
+      @apply="applyFilters"
+      @close="showFilters = false"
     />
 
     <div class="viewer__body">

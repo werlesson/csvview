@@ -38,23 +38,33 @@ async function mountViewer() {
   return wrapper
 }
 
-/** Abre o editor "Adicionar filtro" e submete coluna/operador/valor. */
-async function addFilterViaUi(
+/** Aciona "Adicionar filtro" no drawer (edita só o rascunho) e ajusta coluna/operador/valor. */
+async function editDraftFilterViaUi(
   wrapper: Awaited<ReturnType<typeof mountViewer>>,
   column: string,
   operator: string,
   value: string,
 ): Promise<void> {
-  await wrapper.get('.filter-panel__add .dropdown__trigger').trigger('click')
+  await wrapper.get('.filter-overlay__add').trigger('click')
 
-  const selects = wrapper.findAll('.filter-panel__editor select')
-  await selects[0]!.setValue(column)
-  await selects[1]!.setValue(operator)
+  const card = wrapper.findAll('.filter-card').at(-1)!
+  await card.get('select[aria-label="Coluna do filtro"]').setValue(column)
+  await card.get('select[aria-label="Operador do filtro"]').setValue(operator)
 
-  const valueInput = wrapper.find('.filter-panel__input')
+  const valueInput = card.find('input[aria-label="Valor do filtro"]')
   if (valueInput.exists()) await valueInput.setValue(value)
+}
 
-  await wrapper.get('.filter-panel__submit').trigger('click')
+/** Abre o drawer, monta um filtro no rascunho e confirma com "Filtrar" (RF-05: só aplica no clique). */
+async function applyFilterViaUi(
+  wrapper: Awaited<ReturnType<typeof mountViewer>>,
+  column: string,
+  operator: string,
+  value: string,
+): Promise<void> {
+  await wrapper.get('.toolbar__filters').trigger('click')
+  await editDraftFilterViaUi(wrapper, column, operator, value)
+  await wrapper.get('.filter-overlay__apply').trigger('click')
 }
 
 describe('viewer.vue — fiação dos filtros (Fase 4, T06)', () => {
@@ -68,32 +78,39 @@ describe('viewer.vue — fiação dos filtros (Fase 4, T06)', () => {
     vi.restoreAllMocks()
   })
 
-  it('abre o painel de filtros ao acionar "Filtros" na toolbar e adiciona um filtro reduzindo as linhas em tempo real (RF-05, UI-01, UI-02)', async () => {
+  it('abre o drawer ao acionar "Filtros" na toolbar; editar o rascunho não muda a tabela até clicar em "Filtrar"', async () => {
     const wrapper = await mountViewer()
 
-    expect(wrapper.find('.filter-panel').exists()).toBe(false)
+    expect(wrapper.find('.filter-overlay').exists()).toBe(false)
 
     await wrapper.get('.toolbar__filters').trigger('click')
-    expect(wrapper.find('.filter-panel').exists()).toBe(true)
+    expect(wrapper.find('.filter-overlay').exists()).toBe(true)
 
     expect(wrapper.findAll('.viewer-table__row').length).toBeGreaterThan(0)
     expect(wrapper.text()).toContain('4 linhas')
 
-    await addFilterViaUi(wrapper, '1', 'igual', 'failed')
+    await editDraftFilterViaUi(wrapper, '1', 'igual', 'failed')
 
-    // Contador (visibleRowCount) reflete a nova contagem em tempo real.
+    // Só editar o rascunho não filtra nada ainda — nem fecha o drawer.
+    expect(wrapper.text()).toContain('4 linhas')
+    expect(wrapper.find('.toolbar__filters-badge').exists()).toBe(false)
+    expect(wrapper.find('.filter-overlay').exists()).toBe(true)
+
+    await wrapper.get('.filter-overlay__apply').trigger('click')
+
+    // "Filtrar" aplica de uma vez: contador atualiza, badge aparece, drawer fecha.
     expect(wrapper.text()).toContain('2 linhas')
-    // Badge de contagem de filtros ativos na toolbar.
     expect(wrapper.get('.toolbar__filters-badge').text()).toBe('1')
-    // Chip do filtro ativo aparece no painel.
-    expect(wrapper.get('.filter-panel__chip-label').text()).toContain('status')
+    expect(wrapper.find('.filter-overlay').exists()).toBe(false)
+
+    // O filtro aplicado aparece como badge acima da tabela (FilterChips).
+    expect(wrapper.get('.filter-chips__label').text()).toContain('status')
   })
 
   it('combinação sem resultado renderiza "Nenhuma linha encontrada" com ação de limpar filtros, que restaura as linhas (RF-06, UI-03)', async () => {
     const wrapper = await mountViewer()
 
-    await wrapper.get('.toolbar__filters').trigger('click')
-    await addFilterViaUi(wrapper, '1', 'igual', 'inexistente')
+    await applyFilterViaUi(wrapper, '1', 'igual', 'inexistente')
 
     expect(wrapper.text()).toContain('Nenhuma linha encontrada')
     expect(wrapper.text()).toContain('0 linhas')
@@ -103,34 +120,53 @@ describe('viewer.vue — fiação dos filtros (Fase 4, T06)', () => {
 
     expect(wrapper.find('.viewer-table__empty').exists()).toBe(false)
     expect(wrapper.text()).toContain('4 linhas')
-    expect(wrapper.find('.filter-panel__chip-item').exists()).toBe(false)
+    expect(wrapper.find('.filter-chips').exists()).toBe(false)
     expect(wrapper.find('.toolbar__filters-badge').exists()).toBe(false)
   })
 
-  it('"Limpar" no painel de filtros remove todos os chips e restaura as linhas (RF-03)', async () => {
+  it('o "×" do badge acima da tabela remove aquele filtro imediatamente, sem precisar reabrir o drawer nem clicar em "Filtrar" (RF-03)', async () => {
     const wrapper = await mountViewer()
 
-    await wrapper.get('.toolbar__filters').trigger('click')
-    await addFilterViaUi(wrapper, '1', 'igual', 'failed')
+    await applyFilterViaUi(wrapper, '1', 'igual', 'failed')
     expect(wrapper.text()).toContain('2 linhas')
 
-    await wrapper.get('.filter-panel__clear').trigger('click')
+    await wrapper.get('.filter-chips__remove').trigger('click')
 
     expect(wrapper.text()).toContain('4 linhas')
-    expect(wrapper.find('.filter-panel__chip-item').exists()).toBe(false)
+    expect(wrapper.find('.filter-chips').exists()).toBe(false)
     expect(wrapper.find('.toolbar__filters-badge').exists()).toBe(false)
   })
 
-  it('não acessa IndexedDB nem localStorage ao adicionar/limpar filtros (RF-07)', async () => {
+  it('"Limpar" no drawer só esvazia o rascunho — a tabela só reflete isso após "Filtrar" (RF-05)', async () => {
+    const wrapper = await mountViewer()
+
+    await applyFilterViaUi(wrapper, '1', 'igual', 'failed')
+    expect(wrapper.text()).toContain('2 linhas')
+
+    await wrapper.get('.toolbar__filters').trigger('click')
+    await wrapper.get('.filter-overlay__clear').trigger('click')
+
+    // Rascunho vazio, mas a tabela e o badge ainda refletem o filtro aplicado.
+    expect(wrapper.find('.filter-card').exists()).toBe(false)
+    expect(wrapper.text()).toContain('2 linhas')
+    expect(wrapper.get('.toolbar__filters-badge').text()).toBe('1')
+
+    await wrapper.get('.filter-overlay__apply').trigger('click')
+
+    expect(wrapper.text()).toContain('4 linhas')
+    expect(wrapper.find('.filter-chips').exists()).toBe(false)
+    expect(wrapper.find('.toolbar__filters-badge').exists()).toBe(false)
+  })
+
+  it('não acessa IndexedDB nem localStorage ao aplicar/remover filtros (RF-07)', async () => {
     const wrapper = await mountViewer()
 
     const openSpy = vi.spyOn(indexedDB, 'open')
     const getItemSpy = vi.spyOn(Storage.prototype, 'getItem')
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
 
-    await wrapper.get('.toolbar__filters').trigger('click')
-    await addFilterViaUi(wrapper, '1', 'igual', 'failed')
-    await wrapper.get('.filter-panel__clear').trigger('click')
+    await applyFilterViaUi(wrapper, '1', 'igual', 'failed')
+    await wrapper.get('.filter-chips__remove').trigger('click')
 
     expect(openSpy).not.toHaveBeenCalled()
     expect(getItemSpy).not.toHaveBeenCalled()

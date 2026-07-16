@@ -298,6 +298,14 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   }
 
   /**
+   * Substitui todo o conjunto de filtros de uma vez (ação "Filtrar" do painel):
+   * o editor mantém um rascunho local e só o confirma aqui, num único commit.
+   */
+  function applyFilters(next: ColumnFilter[]): void {
+    filters.value = [...next]
+  }
+
+  /**
    * Ordenação por **clique simples** (sem Shift) num cabeçalho (RF-01): trata a
    * coluna como a única chave, descartando quaisquer outras, e avança o ciclo
    * `asc → desc → sem ordenação`. Partindo de "sem ordenação" (ou de uma chave
@@ -490,6 +498,7 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     updateFilter,
     removeFilter,
     clearFilters,
+    applyFilters,
     sortKeys,
     sortedRows,
     sortColumn,
