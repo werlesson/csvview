@@ -4,22 +4,28 @@
 
 ## AS IS — Current state
 
-No linter or formatter is configured — no `.eslintrc*`, `.prettier*`, `.editorconfig`, or pre-commit hooks found (digest `lint_tools: []`). Patterns below are observed in source, not tool-enforced.
+No linter or formatter is configured — no `.eslintrc*`, `.prettier*`, `.editorconfig`, pre-commit hooks, or `.github/workflows` found. Patterns below are observed consistently across ≥2 source files, not tool-enforced unless noted.
 
-### 1. `<script setup lang="ts">` SFCs with typed props
-Vue 3 Composition API via `<script setup>` with explicit TypeScript prop types. Rationale: type-safe component contracts. Observed in `app/components/CsvCell.vue` — `defineProps<{ value: string | number | null | undefined }>()`. No enforcement tool.
+### 1. Pure domain logic separated from Vue reactivity
+`app/services/*.ts` (`csvParser.ts`, `columnStats.ts`, `formatFile.ts`) contain zero Vue imports — plain functions/types only, runnable inside a Web Worker or a plain Vitest test. Rationale: `csvParser.worker.ts` reuses `runParseRequest` from `csvParser.ts` directly (`/// <reference lib="webworker" />` + `self.addEventListener`), and each service ships its own `*.spec.ts` with no component mount required. No enforcement tool; verified by import inspection of `app/services/csvParser.ts` and `app/services/columnStats.ts`.
 
-### 2. Derived state via `computed`
-Presentation logic lives in `computed` refs, not in the template. Rationale: keeps templates declarative and logic testable. Observed in `CsvCell.vue` (`display`, `isEmpty` computeds). Templates reference only computed values.
+### 2. Module-scope singleton state in composables
+Shared state lives as module-level `ref`s outside the composable function, so multiple call sites share one source of truth without a store library. Observed in `useCurrentDataset.ts:36-37` (`const dataset = ref<Dataset | null>(null)`), `useOpenFile.ts:55-57` (`error`, `isOpening`, `progress`), and `useTheme.ts:21-22` (`theme`, `initialized`). Composables expose `readonly()` wrappers over the refs (`useCurrentDataset.ts:55-56`, `useOpenFile.ts:185-187`) so consumers cannot mutate state directly.
 
-### 3. Tailwind utility classes for styling
-Styling is done with inline Tailwind utility classes bound via `:class`; no scoped `<style>` blocks. Rationale: single global Tailwind v4 entrypoint (`app/assets/css/main.css`, wired in `nuxt.config.ts`). Observed in `CsvCell.vue` (`border-b border-gray-200 px-3 py-2 text-sm`, conditional `text-gray-400 italic`).
+### 3. Dependency injection via options objects, defaulted for production
+Composables that touch IO (Worker, IndexedDB, router) accept an options object where every dependency has a production default, enabling tests to substitute fakes. Observed in `useCsvParser(options: UseCsvParserOptions = {})` (`createWorker` defaults to `defaultCreateWorker`, `useCsvParser.ts:95-96`) and `useOpenFile(options: UseOpenFileOptions = {})` (`parser`, `filesStore`, `currentDataset`, `navigate` all defaulted, `useOpenFile.ts:65-70`). Rationale: `test/useOpenFile.spec.ts` and `test/useCsvParser.spec.ts` inject deterministic fakes instead of a real Worker/IndexedDB/router.
 
-### 4. Component tests with @vue/test-utils `mount`
-Each component ships a Vitest spec mounting it and asserting rendered text/classes. Rationale: behavior-level verification. Observed in `test/CsvCell.spec.ts` (3 cases: value, placeholder, number coercion). Imports via `~` alias resolved in `vitest.config.ts`.
+### 4. `<script setup lang="ts">` SFCs with typed props/emits
+Every component uses Composition API `<script setup>` with `defineProps<{...}>()`/`defineEmits<{...}>()` generic type syntax, not runtime prop validators. Observed in `app/components/CsvCell.vue:4-16` (`defineProps<{ value: string | number | null | undefined; numeric?: boolean; selected?: boolean }>()`) and `app/components/ViewerToolbar.vue:24-37`. No enforcement tool; TypeScript compiler would catch mismatches but `vue-tsc` is currently broken on TS7 (user memory `vue-tsc-typescript7-broken.md`) — validated via `yarn test` instead.
+
+### 5. Scoped CSS with CSS custom properties, no utility-class-only styling
+Components ship a `<style scoped>` block using design-token custom properties (`var(--text)`, `var(--bg-1)`, `var(--accent)`, `var(--border)`) rather than Tailwind utility classes in the template, even though Tailwind v4 is the global CSS entrypoint (`app/assets/css/main.css`, wired in `nuxt.config.ts`). Observed in `CsvCell.vue:41-83`, `StatsPanel.vue:183-394`, `ViewerToolbar.vue:126-266`.
+
+### 6. JSDoc-heavy inline documentation in Portuguese, citing spec IDs
+Every service/composable file opens with a JSDoc block explaining responsibility and cites user-story/requirement IDs (`US-1.1`, `RF-04`, `RNF-03`) and a phase reference. Observed in `app/services/csvParser.ts:1-16`, `app/services/columnStats.ts:1-14`, `app/composables/useViewer.ts:12-25`. Not tool-enforced; a stylistic convention held consistently across the domain layer.
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — tooling and versions
-- [`domain_rules.md`](domain_rules.md) — component behavior rules
-- [`architecture.md`](architecture.md) — layout and layers
+- [`tech_stack.md`](tech_stack.md) — tooling and versions (no lint/format tool present)
+- [`domain_rules.md`](domain_rules.md) — the domain rules these patterns implement
+- [`architecture.md`](architecture.md) — layer boundaries these patterns reinforce

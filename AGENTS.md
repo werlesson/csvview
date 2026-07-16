@@ -17,40 +17,41 @@
 
 | Command | Purpose |
 |---------|---------|
-| `yarn dev` | Start Nuxt dev server (http://localhost:3000) |
+| `yarn dev` | Start Nuxt dev server (`nuxt dev`, http://localhost:3000) |
 | `yarn build` | Production build (`nuxt build`) |
 | `yarn generate` | Static site generation (`nuxt generate`) |
 | `yarn preview` | Preview production build (`nuxt preview`) |
 | `yarn test` | Run unit tests once (`vitest run`) |
 | `yarn test:watch` | Run tests in watch mode (`vitest`) |
 
-- Lint: none configured (no ESLint/Prettier config or lint script).
-- Coverage: none configured (no coverage tool or script).
+- Lint: none configured — no ESLint/Prettier config file, no lint script in `package.json`, no CI workflow (no `.github` directory).
+- Coverage: none configured — no coverage tool or script.
 - `postinstall` runs `nuxt prepare` to regenerate `.nuxt/` types.
 
 ## 2. Code Style & Project Conventions
 
-- TypeScript `^7.0.2`; type check with `vue-tsc` (`^3.3.7`).
-- Vue 3 SFCs (`^3.5.39`); components live in `app/`, the Nuxt `srcDir`.
-- Tailwind CSS v4 via `@tailwindcss/vite`, wired in `nuxt.config.ts`; entrypoint `app/assets/css/main.css` (`@import "tailwindcss"`).
-- Path aliases `~` and `@` resolve to `./app` (`vitest.config.ts`, `tsconfig.json`).
-- No lint tooling present — no enforced formatting rules to cite.
+- TypeScript `^7.0.2` (`package.json:35`); Node `>=22.12.0` required (`package.json:6`, `.nvmrc: "22"`).
+- Vue 3 SFCs (`^3.5.39`) with `<script setup lang="ts">`; app code lives under `app/`, the Nuxt 4 `srcDir` (components, composables, layouts, pages, services).
+- Tailwind CSS v4 via `@tailwindcss/vite`, wired in `nuxt.config.ts`; single entrypoint `app/assets/css/main.css` (`@import "tailwindcss"`); styling via inline utility classes, no scoped `<style>` blocks.
+- Path aliases `~` and `@` both resolve to `./app` (`vitest.config.ts`, `tsconfig.json`).
+- Pure domain logic isolated in `app/services/` (`csvParser.ts`, `csvParser.worker.ts`, `columnStats.ts`, `formatFile.ts`) — kept framework-free and unit-testable.
+- No lint tooling present (`lint_tools: []`) — no enforced formatting rules to cite; conventions above are observed in source, not tool-enforced.
 - See `docs/agents/coding_guidelines.md`.
 
 ## 3. Agent Communication & Behavioral Guidelines
 
-- Use `yarn` for all package operations; `yarn.lock` is the source of truth.
-- Node `>=22.12.0` required (`package.json` engines, `.nvmrc` "22").
-- `app.vue` is still the default Nuxt welcome scaffold; `app/components/CsvCell.vue` is the only real domain code.
+- Use `yarn` for all package operations; `yarn.lock` is the only lockfile present (source of truth).
+- Domain code spans `app/components/` (16 Vue SFCs), `app/composables/` (8 composables: `useCsvParser`, `useCurrentDataset`, `useDatabase`, `useFilesStore`, `useOpenFile`, `useSettingsStore`, `useTheme`, `useViewer`), and `app/services/` — this is not scaffold code; the app is a client-side CSV viewer with parsing, IndexedDB persistence, and a Web Worker.
+- App is `ssr:false` with Nitro `preset:'static'` (`nuxt.config.ts:12-15`) — pure client-side SPA, no server runtime and no backend API surface to design against.
 
 ### Never in this repository
 
-- Never use `npm` or `pnpm` — the repo is pinned to `yarn` (`yarn.lock` present, no other lockfile).
+- Never use `npm` or `pnpm` — the repo is pinned to `yarn` (`yarn.lock` present, no other lockfile found).
 - Never commit `.nuxt/` or `.output/` — both are generated build artifacts and gitignored.
 
 ## 4. Setup, Troubleshooting and Tips
 
-Prereqs: Node `>=22.12.0` (`.nvmrc` "22"), yarn.
+Prereqs: Node `>=22.12.0` (`.nvmrc: "22"`), yarn.
 
 ```sh
 yarn install
@@ -64,16 +65,27 @@ yarn build
 yarn preview
 ```
 
-- Tests run under `happy-dom` with `@vue/test-utils` `mount`; globals enabled (`vitest.config.ts`).
+Static generation:
+
+```sh
+yarn generate
+```
+
+| Symptom | Check |
+|---------|-------|
+| `vue-tsc` reports type-check errors | Known broken on TypeScript `^7.0.2` (`vue-tsc ^3.3.7`) — validate with `yarn test` instead. |
+
+- Tests run under `happy-dom` with `@vue/test-utils` `mount`; globals enabled (`vitest.config.ts:15`).
+- IndexedDB-touching tests (`useDatabase`, `useFilesStore`, `useSettingsStore`) rely on `fake-indexeddb` (`package.json`) — no real browser needed.
 - If aliases fail to resolve in tests, confirm `~`/`@` map to `./app` in `vitest.config.ts`.
 
 ## 5. References
 
 | Doc | Purpose |
 |-----|---------|
-| `README.md` | Nuxt Minimal Starter — install/dev/build/preview boilerplate |
-| `nuxt.config.ts` | Nuxt config (Tailwind vite plugin, css) |
-| `vitest.config.ts` | Vitest config (happy-dom, aliases) |
+| `README.md` | Nuxt Minimal Starter — unmodified install/dev/build/preview boilerplate |
+| `nuxt.config.ts` | Nuxt config (`ssr:false`, Nitro `preset:'static'`, Tailwind vite plugin, fonts) |
+| `vitest.config.ts` | Vitest config (`happy-dom`, `~`/`@` aliases, setup file) |
 | `package.json` | Scripts, dependencies, engines |
 
 ## 6. Agent Documentation
@@ -85,8 +97,8 @@ yarn preview
 | `docs/agents/tech_stack.md` | Nuxt/Vue/Tailwind/Vitest stack and versions |
 | `docs/agents/coding_guidelines.md` | TypeScript and Vue SFC conventions |
 | `docs/agents/domain_rules.md` | CSV cell rendering and formatting rules |
-| `docs/agents/api_contracts.md` | API surface (none present yet) |
-| `docs/agents/data_model.md` | Data model (none present yet) |
+| `docs/agents/api_contracts.md` | API surface (none present) |
+| `docs/agents/data_model.md` | Data model (none present) |
 | `docs/agents/dependencies.md` | Runtime and dev dependency rationale |
 
 _End of AGENTS.md_

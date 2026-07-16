@@ -5,38 +5,41 @@
 ## AS IS — Current state
 
 ### Runtime and language
-- **Language**: TypeScript `^7.0.2` (`package.json`) + Vue 3 SFCs
-- **Framework**: Nuxt `^4.4.8` (`package.json`)
+- **Language**: TypeScript `^7.0.2` (`package.json:35`)
+- **Framework**: Nuxt `^4.4.8` (`package.json:22`) + Vue `^3.5.39` (`package.json:24`)
 
 | Item | Value | Source |
 | --- | --- | --- |
-| Runtime | Node `>=22.12.0` (`engines`); `.nvmrc` = `22` | `package.json`, `.nvmrc` |
-| UI framework | Vue `^3.5.39` | `package.json` |
-| Router | vue-router `^5.1.0` | `package.json` |
-| CSS | Tailwind CSS `^4` via `@tailwindcss/vite ^4` | `nuxt.config.ts`, `package.json` |
-| Type checking | vue-tsc `^3.3.7` | `package.json` |
-| Package manager | yarn | `yarn.lock` |
+| Runtime | Node `>=22.12.0` (`engines`); `.nvmrc` = `22` | `package.json:6`, `.nvmrc` |
+| UI framework | Vue `^3.5.39`, Composition API (`<script setup>`) | `package.json:24` |
+| Meta-framework | Nuxt `^4.4.8`, `ssr:false`, Nitro `preset:'static'` | `package.json:22`, `nuxt.config.ts:12-15` |
+| Router | vue-router `^5.1.0`, file-based pages (`app/pages/`) | `package.json:25` |
+| CSS | Tailwind CSS `^4` via `@tailwindcss/vite ^4` | `nuxt.config.ts:1,34`, `package.json` |
+| Type checking | vue-tsc `^3.3.7` on TypeScript `^7.0.2` | `package.json` — currently broken per user memory (`vue-tsc-typescript7-broken`); validate via `yarn test` |
+| Package manager | yarn (`yarn.lock` present; no `package-lock.json`/`pnpm-lock.yaml`) | repo root |
 
 ### Tests
 | Concern | Tool | Version | Source |
 | --- | --- | --- | --- |
-| Runner | vitest | `^4.1.10` | `vitest.config.ts`, `package.json` |
-| Assertions | vitest `expect` (globals) | — | `vitest.config.ts` `test.globals: true` |
-| Component harness | @vue/test-utils `mount` | `^2.4.11` | `test/CsvCell.spec.ts` |
-| DOM environment | happy-dom | `^20.10.6` | `vitest.config.ts` `environment: 'happy-dom'` |
-| SFC transform | @vitejs/plugin-vue | `^6.0.8` | `vitest.config.ts` |
-| Mocks | none observed | — | digest |
-| Coverage | none found | — | no coverage script/config |
+| Runner | Vitest | `^4.1.10` | `package.json:36`, `vitest.config.ts` |
+| Assertions | Vitest built-in `expect` (globals) | — | `vitest.config.ts:15` `test.globals: true` |
+| Component harness | `@vue/test-utils` `mount` | `^2.4.11` | `package.json`, used across `test/*.spec.ts` |
+| DOM environment | happy-dom | `^20.10.6` | `vitest.config.ts:14` `environment: 'happy-dom'` |
+| SFC transform | `@vitejs/plugin-vue` | `^6.0.8` | `vitest.config.ts:3,6` |
+| IndexedDB mock | `fake-indexeddb` | `^6.2.5` | used by `test/useDatabase.spec.ts`, `useFilesStore.spec.ts`, `useSettingsStore.spec.ts` |
+| Coverage | none configured | — | no coverage script/config in `package.json` |
 
-Path aliases in tests: `~` and `@` → `./app` (`vitest.config.ts`).
+Path aliases in tests: `~` and `@` both resolve to `./app` (`vitest.config.ts:8-11`).
 
-Scripts (`package.json`): `dev: nuxt dev`, `build: nuxt build`, `generate: nuxt generate`, `preview: nuxt preview`, `postinstall: nuxt prepare`, `test: vitest run`, `test:watch: vitest`.
+Scripts (`package.json:8-15`): `dev: nuxt dev`, `build: nuxt build`, `generate: nuxt generate`, `preview: nuxt preview`, `postinstall: nuxt prepare`, `test: vitest run`, `test:watch: vitest`.
+
+Known issue (user memory `vue-tsc-typescript7-broken.md`): `vue-tsc` type-checking fails on TypeScript 7; correctness is validated via `yarn test` (Vitest), not `vue-tsc`/`type-check`.
 
 ### External integrations
-None wired. No HTTP clients, DB drivers, or broker SDKs in `package.json` (digest `dependencies`).
+None over HTTP. No fetch/axios/HTTP client or DB driver in `package.json` dependencies; the only browser-platform integrations are IndexedDB (`idb ^8.0.3`) and Web Worker (native API), both documented in `architecture.md`.
 
 ## Related documents
 
-- [`dependencies.md`](dependencies.md) — full dependency inventory
-- [`architecture.md`](architecture.md) — layout and layers
-- [`coding_guidelines.md`](coding_guidelines.md) — enforced patterns
+- [`dependencies.md`](dependencies.md) — full dependency inventory with roles
+- [`architecture.md`](architecture.md) — how layers and integration points wire together
+- [`coding_guidelines.md`](coding_guidelines.md) — observed patterns and enforcement

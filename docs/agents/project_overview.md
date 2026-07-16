@@ -5,35 +5,35 @@
 ## AS IS — Current state
 
 ### Purpose
-Early-stage Nuxt 4 web app scaffold intended as a CSV viewer; the only implemented domain code is `app/components/CsvCell.vue`, which renders a single CSV table cell.
-
-### Business problem
-- Repo name `csvview` implies displaying tabular CSV data in a browser.
-- No CSV parsing, loading, upload, or table-assembly code exists yet — only per-cell rendering (`app/components/CsvCell.vue`).
-- `app/app.vue` is still the unmodified default `NuxtWelcome` scaffold; the app has no wired-up page beyond the starter welcome screen.
+CSV View is a 100%-client-side Nuxt 4 SPA that opens, browses, sorts, filters, and computes column statistics for large CSV/TSV/TXT files entirely in the browser, without sending data to any server (`app/pages/index.vue`: "100% no navegador · seus dados não saem daqui"; `nuxt.config.ts:8` "ssr: false").
 
 ### Consumers and integrations
 | System | Role |
 | --- | --- |
-| Browser (Nuxt dev/build) | Serves the app at `http://localhost:3000` (README) via `nuxt dev` / `nuxt build` |
-| Vitest + happy-dom | Test harness mounting components (`test/CsvCell.spec.ts`) |
+| Browser (SPA runtime) | Hosts the entire app; `ssr:false` + Nitro `preset:'static'` (`nuxt.config.ts:12-15`) — no server process at runtime |
+| Web Worker (`app/services/csvParser.worker.ts`) | Runs CSV parsing off the main thread, spawned by `useCsvParser.ts` |
+| IndexedDB (browser) | Persists opened files and settings via `idb` (`app/composables/useDatabase.ts`) |
+| Vitest + happy-dom + fake-indexeddb | Test harness for components, composables, and services (`test/*.spec.ts`) |
 
-No external services, APIs, brokers, or databases are wired (digest: `api_surface.present=false`, `async.present=false`, `persistence.present=false`).
+No external HTTP APIs, backend services, or third-party network calls are wired (digest `api_surface.present=false`; no fetch/axios/HTTP client in `package.json`).
 
 ### Macro flow
-1. `nuxt dev` (or `nuxt build` + `nuxt preview`) boots the Nuxt server, entry `app/app.vue`.
-2. Nuxt loads global CSS `~/assets/css/main.css` (Tailwind v4 entrypoint) via `nuxt.config.ts`.
-3. `app.vue` renders the default Nuxt welcome scaffold (no CSV route wired yet).
-4. `CsvCell.vue`, when mounted with a `value` prop, computes a display string and renders a `<td>` — `null`/`undefined`/`''` become an em-dash `—`, other values are `String()`-coerced.
-5. Terminal state: rendered DOM in the browser (no persistence, no network side-effects).
+1. User drags/drops or picks a file in `Dropzone.vue` on `app/pages/index.vue` (Upload screen); accepted extensions `.csv`, `.tsv`, `.txt` (`useOpenFile.ts:24` `ACCEPTED_EXTENSIONS`).
+2. `useOpenFile.openFile()` reads the file as text, then parses it via `useCsvParser().parseText()`, which spawns the Web Worker (`csvParser.worker.ts`) or falls back to an inline `parseCsv()` call if `Worker` construction fails (`useCsvParser.ts:50-93`).
+3. `csvParser.ts` detects the delimiter (comma/tab/semicolon, header-line-first heuristic), strips BOM, streams the parse via PapaParse in chunks (`DEFAULT_CHUNK_SIZE = 1024*1024`), and normalizes short rows to the header's column count.
+4. The parsed result is persisted to IndexedDB store `files` via `useFilesStore().saveFile()` (LRU-capped at `MAX_RECENT_FILES = 10`), then loaded into the shared `useCurrentDataset()` state.
+5. `navigateTo('/viewer')` transitions to the Viewer screen (`useOpenFile.ts:83`, `VIEWER_ROUTE = '/viewer'`); `app/pages/viewer.vue` redirects back to `/` if no dataset is loaded (`if (!hasDataset.value) await navigateTo('/')`).
+6. `useViewer()` derives column types (`inferColumnType`), search-filtered rows, multi-key sort, column widths/pins/order — all reactive `computed`s over the in-memory dataset; `ViewerTable.vue` renders it virtualized via `@tanstack/vue-virtual` (`ROW_HEIGHT = 40`, `overscan: 12`).
+7. Selecting a column (`selectColumn`) computes `ColumnStats` via `app/services/columnStats.ts` and renders them in `StatsPanel.vue` (+ `StatsHistogram.vue` for numeric columns).
+8. Terminal state: rendered/interactive DOM in the browser; the only persisted artifact is the IndexedDB `files`/`settings` records — no data leaves the machine.
 
 ### Out of scope
-- CSV parsing/loading/upload — no such code present in `app/`.
-- Backend/API — no `server/`, `routes/`, or `api/` handlers (digest `api_surface`).
-- Persistence — no migrations, ORM, or DB config (digest `persistence`).
+- Server-side rendering / API routes — `ssr: false`, no `server/` directory, no `api_surface` evidence (digest `api_surface.present=false`).
+- Any network transmission of file content — parsing, stats, and persistence are all client-side (`app/services/columnStats.ts` header comment: "nenhum dado sai da máquina").
+- Multi-user/auth features — no auth code, no user model, no session store found in `app/`.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — layout, layers, component responsibilities
-- [`domain_rules.md`](domain_rules.md) — CsvCell rendering rules
-- [`tech_stack.md`](tech_stack.md) — Nuxt/Vue/Vitest versions
+- [`architecture.md`](architecture.md) — directory layout and layer responsibilities
+- [`domain_rules.md`](domain_rules.md) — parsing, type inference, and sorting rules
+- [`data_model.md`](data_model.md) — IndexedDB `files`/`settings` stores

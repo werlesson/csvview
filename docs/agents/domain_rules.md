@@ -5,34 +5,116 @@
 ## AS IS — Current state
 
 ### Overview
-- Only one domain component exists: `app/components/CsvCell.vue` — rendering a single CSV table cell.
-- No CSV parsing, row/table assembly, loading, or state management is implemented.
-- `app/app.vue` remains the default Nuxt welcome scaffold.
+- Delimiter detection and CSV/TSV parsing with row normalization (`app/services/csvParser.ts`).
+- Per-column type inference with a fixed precedence order, plus null/unique/duplicate/numeric statistics (`app/services/columnStats.ts`).
+- Type-aware, direction-aware, empty-last sort comparator shared by single-click and Shift-click multi-key sorting (`app/services/columnStats.ts`, `app/composables/useViewer.ts`).
+- Recent-files LRU eviction and reopen/"touch" semantics over IndexedDB (`app/composables/useFilesStore.ts`).
+- Column layout rules: pin-group clamped reordering, per-column width with a floor, visibility independent of search/stats (`app/composables/useViewer.ts`).
+- Open-file workflow: extension allowlist, parse → persist → load → navigate, with distinct error paths for invalid type vs. parse failure (`app/composables/useOpenFile.ts`).
 
-### CsvCell — empty-value placeholder
-Implementing file: `app/components/CsvCell.vue`.
+### Delimiter detection
+Implementing file: `app/services/csvParser.ts` (`detectDelimiter`, `detectFromContent`, `pickByCounts`).
 
-A cell's display string is computed from the `value` prop (`string | number | null | undefined`):
+- Candidates: `comma` (`,`), `tab` (`\t`), `semicolon` (`;`) (`DELIMITER_CHARS`).
+- Extension gives a **hint** only: `.csv` → `comma`, `.tsv` → `tab`, anything else (`.txt`) → no hint.
+- Content decides first from the **header line** (first non-empty line of the first 64 KB sample); only if the header has no delimiter candidate does the full 5-line sample decide.
+- Ties resolve in favor of the hint, then `comma > tab > semicolon` (`pickByCounts`, order array starts with `hint`).
+- Empty/whitespace-only content with no hint defaults to `comma`.
 
-| Input `value` | Rendered text | CSS state |
+| Extension | Content signal | Detected delimiter |
 | --- | --- | --- |
-| `null` | `—` (em-dash) | `text-gray-400 italic` |
-| `undefined` | `—` (em-dash) | `text-gray-400 italic` |
-| `''` (empty string) | `—` (em-dash) | `text-gray-400 italic` |
-| any number (e.g. `42`) | `String(value)` (e.g. `"42"`) | `text-gray-800` |
-| any non-empty string (e.g. `"hello"`) | the string | `text-gray-800` |
+| `.csv` | header has more `;` than `,`/`\t` | `semicolon` (content overrides extension hint) |
+| `.csv` | header has no delimiter chars | `comma` (hint wins on tie/absence) |
+| `.tsv` | any | `tab` (hint), unless content strictly favors another |
+| `.txt` | header has more `;` | `semicolon` |
+| any | empty content | hint if present, else `comma` |
 
-Rules, verbatim from source:
-- `display = (value === null || value === undefined || value === '') ? '—' : String(value)`.
-- `isEmpty = display === '—'` — drives styling; empty cells render greyed and italic, populated cells render dark.
-- Output element is a `<td>` with base classes `border-b border-gray-200 px-3 py-2 text-sm`.
+To extend: add a new entry to `DELIMITER_CHARS`/`Delimiter` and extend `countDelimiters`/`pickByCounts`'s `base` array — the hint-first tie-break logic requires no other change.
 
-Verified by `test/CsvCell.spec.ts`: `'hello'` → `hello` (not italic); `null` → `—` (italic); `42` → `42`.
+### Row normalization and empty-file handling
+Implementing file: `app/services/csvParser.ts` (`parseCsv`, `normalizeRow`).
 
-To extend: add branches to the `display` computed or expose additional props; keep `isEmpty` in sync if new placeholder states are introduced.
+- First line is always the header (`US-1.1`); every value is kept as a string (type inference deferred to `columnStats.ts`).
+- BOM (`U+FEFF`) is stripped before delimiter detection or parsing (`stripBom`), preventing it from corrupting the first header label.
+- Rows shorter than the header's column count are padded with `''`; longer rows are preserved as-is (`normalizeRow`).
+- Empty/whitespace-only content rejects with `CsvParseError('O arquivo está vazio.')` before PapaParse even runs.
+- Zero data rows after parsing (e.g. only blank lines, filtered by `skipEmptyLines: 'greedy'`) rejects with `CsvParseError('O arquivo não contém nenhuma linha.')`.
+- Parsing streams via PapaParse `chunk()` callback (`chunkSize` default `1024*1024` bytes) and reports `onProgress(cursor/totalBytes)` per chunk, `onProgress(1)` on completion.
+
+### Column type inference
+Implementing file: `app/services/columnStats.ts` (`inferColumnType`).
+
+Single O(N) pass per column; empty cells (`isEmptyCell`: `null`/`undefined`/whitespace-only) are skipped and never invalidate a type. The column adopts the **first** type in this precedence order whose full set of non-empty cells all satisfy it:
+
+| Order | Type | Recognizer | Notes |
+| --- | --- | --- | --- |
+| 1 | `number` | `NUMBER_RE` via `parseNumber` | Rejects hex, `Infinity`, `NaN`, thousand separators |
+| 2 | `date` | `DATE_ISO_RE` or `DATE_DMY_RE` via `isDateValue` | ISO `YYYY-MM-DD[Thh:mm[:ss][Z\|±hh:mm]]` or `DD/MM/YYYY`-family with plausible day/month range |
+| 3 | `boolean` | `BOOLEAN_TOKENS` (case-insensitive) | `{true, false, sim, não, yes, no}` — `0`/`1` are NOT boolean (number wins first) |
+| 4 | `email` | `EMAIL_RE` | One `@`, no spaces either side, a `.` in the domain |
+| 5 | `url` | `URL_RE` | Only `http://`/`https://` schemes |
+| 6 (fallback) | `text` | — | Also the type when the column has no filled cells |
+
+To extend: insert a new `allX` flag + recognizer function in `inferColumnType`'s loop at the desired precedence position, and add the corresponding branch to the final `if` chain.
+
+### Numeric statistics and histogram
+Implementing file: `app/services/columnStats.ts` (`computeNumericStats`, `buildHistogram`, `histogramBinCount`).
+
+- Computed only when `type === 'number'` and at least one value parses (`computeColumnStats`).
+- `min`/`max`/`sum` in one pass; `mean = sum / count`; `median` via a sorted copy (O(N log N)) — average of the two central values when count is even.
+- `numericKind`: `'decimal'` if any value fails `Number.isInteger`, else `'integer'` — `1.0`, `5.00`, `2e3` all count as integer by value, not by text form.
+- Histogram bin count follows Sturges' rule: `max(1, ceil(log2(n)) + 1)`; equal min/max collapses to a single bin; the last bin is inclusive of `max` to avoid an off-by-one empty bin.
+
+### Sort comparator (type-aware, empty-last)
+Implementing file: `app/services/columnStats.ts` (`makeComparator`, `compareFilled`); consumed by `app/composables/useViewer.ts` (`sortedRows`).
+
+- Empty cells (`isEmptyCell`) always sort to the end, in **both** `asc` and `desc` directions — direction only inverts the order among filled cells.
+- `number` compares by parsed numeric value; `date` compares by `parseDate` timestamp (ambiguous `DD..MM..YYYY` is always read as day/month/year — no per-column majority detection); `text` (and any value that fails to parse for its column's type) falls back to `localeCompare`.
+- Ties return `0`, relying on `Array.prototype.sort`'s stability (V8) to preserve prior order — this is what makes multi-key sort additive rather than a full re-sort.
+
+### Sort interaction cycle (single-click vs. Shift-click)
+Implementing file: `app/composables/useViewer.ts` (`sortColumn`, `sortColumnAdditive`).
+
+| Trigger | Current state of clicked column | Next state |
+| --- | --- | --- |
+| Plain click | Not the sole active key (none, or different/multi-key) | Becomes the **only** key, direction `asc` |
+| Plain click | Already the sole key, direction `asc` | Same sole key, direction `desc` |
+| Plain click | Already the sole key, direction `desc` | No sort keys (reverts to original order) |
+| Shift+click | Column not in `sortKeys` | Appended to `sortKeys` as `asc` (lowest priority) |
+| Shift+click | Column in `sortKeys`, direction `asc` | Same position, direction `desc` |
+| Shift+click | Column in `sortKeys`, direction `desc` | Removed from `sortKeys`; remaining keys keep relative order |
+
+To extend: both functions only ever replace `sortKeys.value` wholesale — new interaction modes can be added as new exported functions operating on the same `SortKey[]` shape without touching `sortedRows`.
+
+### Column pin/reorder rule
+Implementing file: `app/composables/useViewer.ts` (`reorderColumn`, `displayColumns`, `pinColumn`/`unpinColumn`).
+
+- `displayColumns` = pinned columns (in pin-insertion order) followed by unpinned visible columns (in `order`, defaulting to header identity order).
+- `reorderColumn(from, to)` operates on positions within `displayColumns`; a drag target outside the dragged column's own group (pinned vs. unpinned) is clamped to that group's boundary — dragging never crosses from the pinned group into the unpinned group or vice versa.
+- Column width (`resizeColumn`) is clamped to a floor of `MIN_COLUMN_WIDTH = 48` px with no ceiling; unset columns default to `DEFAULT_COLUMN_WIDTH = 180` px. Width/order/pin state is tracked by the column's **original** header index, so it survives hide/show and reordering.
+
+### Recent-files LRU eviction and reopen
+Implementing file: `app/composables/useFilesStore.ts` (`saveFile`, `touchFile`, `MAX_RECENT_FILES = 10`).
+
+- `saveFile()` adds a record, then — inside the same transaction — walks the `last_opened_at` index in ascending (oldest-first) order via cursor, deleting records while `count() - MAX_RECENT_FILES > 0`.
+- `listFiles()` returns records newest-first by reversing the ascending index read.
+- `touchFile(id)` rewrites `last_opened_at` to "now" (or a supplied timestamp), which is how `useOpenFile.reopenRecent()` moves a reopened file back to the top of the recents list without re-saving its content.
+
+### Open-file workflow error paths
+Implementing file: `app/composables/useOpenFile.ts` (`openFile`, `reopenRecent`, `hasAcceptedExtension`).
+
+| Path | Precondition | Result |
+| --- | --- | --- |
+| `openFile(file)` | Extension not in `['.csv', '.tsv', '.txt']` | `error` set to a Portuguese "unsupported type" message; parse/persist never attempted |
+| `openFile(file)` | Extension OK, parse throws `CsvParseError` | `error` set to the parse error's message (e.g. "O arquivo está vazio.") |
+| `openFile(file)` | Parse + persist succeed | Dataset loaded via `useCurrentDataset.setDataset`, navigates to `/viewer`, returns `true` |
+| `reopenRecent(id)` | No `FileRecord` for `id` | `error` = `'Arquivo não encontrado.'`, returns `false` |
+| `reopenRecent(id)` | Record found | Re-parses persisted `content`, calls `touchFile(id)`, loads dataset, navigates, returns `true` |
+
+Both paths share `isOpening`/`progress` refs and reset `error` to `null` at the start of each call.
 
 ## Related documents
 
-- [`project_overview.md`](project_overview.md) — system purpose
-- [`architecture.md`](architecture.md) — component layer boundaries
-- [`api_contracts.md`](api_contracts.md) — component prop contract
+- [`project_overview.md`](project_overview.md) — system purpose and macro flow this domain logic serves
+- [`architecture.md`](architecture.md) — service/composable layer boundaries and the Web Worker flow
+- [`api_contracts.md`](api_contracts.md) — the Worker message contract that carries `ParseResult`

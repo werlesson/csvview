@@ -5,34 +5,46 @@
 ## AS IS — Current state
 
 ### External services
-None. No HTTP APIs, databases, brokers, or third-party SDKs are wired (digest `api_surface`, `persistence`, `async` all `present=false`; `env_vars: []`).
+None. No HTTP APIs, databases, message brokers, or third-party SDKs are wired — no `.env`/`.env.example` found (digest `env_vars: []`), no HTTP client in `package.json`, `api_surface.present=false`.
+
+### Internal libraries
+None. Single-package repo, no `workspaces` field in `package.json`, no private/first-party npm packages.
+
+### Shared infrastructure
+| Infrastructure | Role | Source |
+| --- | --- | --- |
+| IndexedDB (`idb ^8.0.3`) | Client-side persistence for opened files (`files` store) and preferences (`settings` store) | `app/composables/useDatabase.ts` |
+| Web Worker (native, no package) | Offloads CSV parsing off the main thread | `app/services/csvParser.worker.ts`, `app/composables/useCsvParser.ts` |
+
+No queues, caches, or observability tooling referenced in code or config.
 
 ### Runtime dependencies
 | Package | Version | Role |
 | --- | --- | --- |
-| nuxt | `^4.4.8` | Meta-framework (build, dev server, SSR) |
-| vue | `^3.5.39` | UI framework |
-| vue-router | `^5.1.0` | Routing |
+| nuxt | `^4.4.8` | Meta-framework: routing, build, SSR toggle |
+| vue | `^3.5.39` | UI framework (Composition API) |
+| vue-router | `^5.1.0` | Client routing between `/` and `/viewer` |
+| papaparse | `^5.5.4` | CSV/TSV streaming parse engine (`app/services/csvParser.ts`) |
+| idb | `^8.0.3` | Typed Promise wrapper over IndexedDB (`app/composables/useDatabase.ts`) |
+| @tanstack/vue-virtual | `^3.13.32` | Row virtualization for large CSV tables (`ViewerTable.vue`) |
+| @fontsource-variable/geist | `^5.2.9` | Self-hosted variable font |
+| @fontsource-variable/geist-mono | `^5.2.8` | Self-hosted monospace variable font |
 
 ### Dev dependencies
 | Package | Version | Role |
 | --- | --- | --- |
-| @tailwindcss/vite | `^4` | Tailwind v4 Vite plugin (wired in `nuxt.config.ts`) |
-| tailwindcss | `^4` | CSS utility framework |
-| @vitejs/plugin-vue | `^6.0.8` | Vue SFC support for Vitest/Vite |
-| @vue/test-utils | `^2.4.11` | Vue component test harness |
-| happy-dom | `^20.10.6` | DOM environment for tests |
-| vitest | `^4.1.10` | Test runner |
 | typescript | `^7.0.2` | Type system |
-| vue-tsc | `^3.3.7` | Vue-aware TS type checking |
-
-### Internal libraries
-None. No private/first-party packages; single-package repo (`package.json`, no workspaces).
-
-### Shared infrastructure
-None. No queues, caches, or observability tooling referenced in code or config (digest).
+| vue-tsc | `^3.3.7` | Vue SFC type-checking (broken on TS7 per user memory) |
+| vitest | `^4.1.10` | Test runner |
+| @vitejs/plugin-vue | `^6.0.8` | Vue SFC compilation for Vitest/Vite |
+| @vue/test-utils | `^2.4.11` | Component mounting/testing |
+| happy-dom | `^20.10.6` | DOM environment for Vitest |
+| fake-indexeddb | `^6.2.5` | IndexedDB mock for persistence-layer tests |
+| tailwindcss | `^4` | CSS utility framework |
+| @tailwindcss/vite | `^4` | Tailwind v4 Vite plugin, wired in `nuxt.config.ts:1,34` |
+| @types/papaparse | `^5.5.2` | Type defs for papaparse |
 
 ## Related documents
 
-- [`tech_stack.md`](tech_stack.md) — runtime, framework, test versions
-- [`architecture.md`](architecture.md) — how dependencies wire together
+- [`tech_stack.md`](tech_stack.md) — runtime, framework, and test tool versions
+- [`architecture.md`](architecture.md) — how dependencies wire into layers

@@ -4,11 +4,49 @@
 
 ## AS IS — Current state
 
-### Not applicable in this repository
+Persistence is entirely client-side IndexedDB (browser storage), opened/owned by `app/composables/useDatabase.ts`. There is no server database, no migrations, no ORM, no `*.sql`/`schema.prisma` files (digest `persistence.present=true`, evidence limited to `useDatabase.ts`/`useFilesStore.ts`/`useSettingsStore.ts`).
 
-No persistence layer exists: there are no migrations, no ORM or Prisma models, no `*.sql` files, and no database driver or DB config in the manifest (digest `persistence.present=false`, `evidence: []`). No cache or in-memory store is implemented either — the only stateful surface is Vue `computed` derivation inside `app/components/CsvCell.vue`, which holds no persisted or shared state. No environment variables define datastore connections (digest `env_vars: []`).
+### Entities
+
+#### `FileRecord` (object store `files`)
+Defined in `app/composables/useDatabase.ts:38-57`. Key path `id` (auto-increment). Index `last_opened_at` (`LAST_OPENED_INDEX`, `useDatabase.ts:32,102`) orders the recent-files list.
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `id` | `number` | Auto-increment primary key |
+| `name` | `string` | Original file name |
+| `delimiter` | `string` | Inferred delimiter: `comma` \| `tab` \| `semicolon` |
+| `size_bytes` | `number` | Original content size in bytes |
+| `row_count` | `number` | Data row count (header excluded) |
+| `column_count` | `number` | Header column count |
+| `content` | `string` | Raw file content, re-parsed on reopen |
+| `created_at` | `number` | Epoch ms, first opened |
+| `last_opened_at` | `number` | Epoch ms, last reopen — drives LRU ordering |
+
+Invariant: at most `MAX_RECENT_FILES = 10` records kept (`app/composables/useFilesStore.ts:18`). `saveFile()` evicts the oldest-by-`last_opened_at` record(s) via cursor walk over the `last_opened_at` index whenever the store exceeds the cap (`useFilesStore.ts:64-70`). `touchFile()` updates `last_opened_at` to move a record back to the top on reopen (`useFilesStore.ts:103-118`).
+
+#### `SettingRecord` (object store `settings`)
+Defined in `app/composables/useDatabase.ts:60-67`. Key path `key`.
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `key` | `string` | Preference key, e.g. `"theme"` (`THEME_KEY`, `useSettingsStore.ts:14`) |
+| `value` | `string` | Preference value, e.g. `"dark"` |
+| `updated_at` | `number` | Epoch ms of last write |
+
+Invariant: reading a key with no persisted record falls back to a caller-supplied fallback, else `SETTINGS_DEFAULTS[key]` (currently only `theme` → `DEFAULT_THEME = 'dark'`), else `undefined` (`useSettingsStore.ts:33-41`).
+
+### Storage
+- Engine: browser IndexedDB, accessed via the `idb` Promise wrapper (`idb ^8.0.3`).
+- Schema location: `app/composables/useDatabase.ts` — `DB_NAME = 'csvview'`, `DB_VERSION = 1`, stores created in the `upgrade()` callback of `openDB()` (`useDatabase.ts:93-111`).
+- Migration tool: none — schema changes require bumping `DB_VERSION` and extending the `upgrade()` callback; no migration framework or files present.
+- Connection lifecycle: module-level singleton `dbPromise` (`useDatabase.ts:86`); `closeDatabase()`/`deleteDatabase()` exist to reset it, used by tests to isolate cases (`useDatabase.ts:118-133`).
+
+### Cache
+- `useCurrentDataset.ts:36-37` holds the currently loaded `Dataset`/`DatasetMeta` as module-scope `ref`s — an in-memory (non-persisted) cache that survives navigation between Upload and Viewer without re-parsing, cleared via `clearDataset()`.
+- `useViewer.ts` holds session-only view state (search term, hidden columns, sort keys, column widths/order/pins) as `ref`s scoped to each `useViewer()` call — explicitly never written to IndexedDB ("Estado apenas em memória de sessão — nada é gravado em IndexedDB", `useViewer.ts:76-100`).
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — no data layer present
-- [`dependencies.md`](dependencies.md) — no DB/cache dependencies
+- [`architecture.md`](architecture.md) — where `useDatabase`/`useFilesStore` sit in the composable layer
+- [`domain_rules.md`](domain_rules.md) — LRU eviction and settings-default rules in behavioral detail

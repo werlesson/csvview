@@ -5,41 +5,95 @@
 ## AS IS — Current state
 
 ### Style
-Single-page Nuxt 4 application using the standard Nuxt convention layout (`srcDir: app/`); component-based Vue 3 SFCs, no backend layer.
+Component-based Vue 3 SPA on Nuxt 4 conventions (`srcDir: app/`), organized as UI components + composables (state/orchestration) + services (pure domain logic) — no backend layer, no MVC routing (`ssr:false`, `nitro.preset:'static'`, `nuxt.config.ts:12-15`).
 
 ### Directory layout
 ```
-./                       Nuxt 4 app root
-├── app/                 application source (Nuxt srcDir)
-│   ├── app.vue          root component (default NuxtWelcome scaffold)
-│   ├── assets/css/      main.css — Tailwind v4 entrypoint (@import "tailwindcss")
-│   └── components/      Vue SFCs — CsvCell.vue (only domain code)
-├── public/              static assets (favicon.ico, robots.txt)
-├── test/                Vitest unit tests — CsvCell.spec.ts
-├── nuxt.config.ts       Nuxt config (Tailwind vite plugin, global css)
-├── vitest.config.ts     Vitest config (happy-dom, ~ / @ → ./app aliases)
-├── tsconfig.json        TS project references into .nuxt/*
-├── package.json         manifest / scripts
-├── yarn.lock            Yarn lockfile (package manager = yarn)
-├── .nvmrc               node "22"
-├── .nuxt/               generated build artifacts (gitignored)
-└── .output/             generated production output (gitignored)
+/home/werlesson/csvview
+├── app/                       # Nuxt srcDir — all application code
+│   ├── app.vue                # root component: useTheme() + NuxtLayout/NuxtPage
+│   ├── assets/css/main.css    # Tailwind v4 entrypoint (@import "tailwindcss")
+│   ├── components/            # 16 Vue SFCs: presentational + domain (CsvCell,
+│   │                          #   ViewerTable, ViewerToolbar, StatsPanel,
+│   │                          #   StatsHistogram, RecentFiles, Dropzone, ThemeToggle,
+│   │                          #   Badge, Button, ColumnChip, Dropdown, LogoMark,
+│   │                          #   SearchInput, Select, Tooltip)
+│   ├── composables/           # useCsvParser, useCurrentDataset, useDatabase,
+│   │                          #   useFilesStore, useOpenFile, useSettingsStore,
+│   │                          #   useTheme, useViewer — reactive state + orchestration
+│   ├── layouts/default.vue    # default Nuxt layout
+│   ├── pages/                 # index.vue (Upload), viewer.vue (Viewer) — file-based routes
+│   └── services/              # csvParser.ts, csvParser.worker.ts, columnStats.ts,
+│                               #   formatFile.ts — pure, framework-free domain logic
+├── public/                    # static assets (favicon, logo, robots.txt)
+├── scripts/ralph.sh           # repo automation script, not part of the app runtime
+├── test/                      # Vitest specs, 1:1 with components/composables/services,
+│                               #   plus test/pages/ and test/setup.ts
+├── docs/agents/                # 8 generated agent docs
+├── nuxt.config.ts             # ssr:false, Nitro preset 'static', Tailwind vite plugin
+├── vitest.config.ts           # happy-dom env, ~ / @ aliases → ./app
+├── package.json / yarn.lock   # manifest + yarn-only lockfile
+└── tsconfig.json              # references .nuxt/tsconfig.*.json (Nuxt-generated)
 ```
 
 ### Layer responsibilities
 | Layer | Owns | Does NOT own |
 | --- | --- | --- |
-| `app/app.vue` | Root component / render entry | CSV routing (not implemented) |
-| `app/components/` | Presentational Vue SFCs (`CsvCell.vue`) | Data fetching, parsing, state |
-| `app/assets/css/` | Tailwind v4 global stylesheet | Component-scoped styles |
-| `nuxt.config.ts` | Build config: Tailwind vite plugin, global CSS, devtools | Runtime env/secrets |
-| `test/` | Vitest component tests | Production code |
+| `app/services/` | Pure domain logic: CSV/TSV parsing (`csvParser.ts`), column type inference + stats (`columnStats.ts`), file-metadata formatting (`formatFile.ts`) | Vue reactivity, DOM, browser APIs (no `ref`/`computed` imports) |
+| `app/composables/` | Reactive state + orchestration: parse orchestration (`useCsvParser`), IndexedDB schema/access (`useDatabase`, `useFilesStore`, `useSettingsStore`), current dataset (`useCurrentDataset`), viewer derived state (`useViewer`), open-file workflow (`useOpenFile`), theme (`useTheme`) | Rendering/markup, direct DOM manipulation beyond `document.documentElement` (theme) |
+| `app/components/` | Presentational + domain-aware Vue SFCs (props in, events out); e.g. `ViewerTable.vue` virtualizes rows via `@tanstack/vue-virtual`, `StatsPanel.vue` renders `ColumnStats` | Persistence, parsing, business rules (delegated to composables/services) |
+| `app/pages/` | Route-level composition: `index.vue` wires `Dropzone` + `RecentFiles` + `useOpenFile`; `viewer.vue` wires `ViewerToolbar` + `ViewerTable` + `StatsPanel` + `useViewer` | Reusable UI (delegated to `components/`) |
+| `nuxt.config.ts` | Build/runtime config: SSR toggle, Nitro preset, Tailwind Vite plugin, global CSS, page title | Env/secrets (none declared; `env_vars: []`) |
+| `test/` | Vitest specs, one per component/composable/service | Production code |
 
 ### External integration points
-None. No `server/`, `api/`, DB, or broker clients present (digest: `api_surface.present=false`, `persistence.present=false`, `async.present=false`).
+None over the network. The only "external" boundary is the browser platform itself:
+
+| System | Client/config | Notes |
+| --- | --- | --- |
+| IndexedDB | `idb` package via `app/composables/useDatabase.ts` (`DB_NAME='csvview'`, `DB_VERSION=1`) | Client-side persistence only, no server DB |
+| Web Worker | `new Worker(new URL('../services/csvParser.worker.ts', import.meta.url), { type: 'module' })` (`useCsvParser.ts:32-37`) | Offloads CSV parsing; inline fallback if unavailable |
+| `localStorage` (legacy path) | `THEME_STORAGE_KEY = 'csvview:theme'` in `app/composables/useTheme.ts:17` | Superseded at read/write time by IndexedDB `settings` store (`useSettingsStore.ts`) for the same key `theme` |
+
+### Macro flow: CSV parse via Web Worker
+```
+Dropzone.vue --select(File)--> useOpenFile.openFile()
+                                     |
+                                     v
+                          file.text() [raw string]
+                                     |
+                                     v
+                     useCsvParser.parseText(content, fileName)
+                                     |
+                         +-----------+-----------+
+                         |                       |
+                 createWorker() OK        createWorker() throws
+                         |                       |
+                         v                       v
+        postMessage({content, fileName})   parseCsv() inline
+                         |                  (main thread, chunked)
+                         v                       |
+        csvParser.worker.ts (self.addEventListener)
+                         |
+                         v
+        runParseRequest -> parseCsv() [PapaParse, streamed chunks]
+                         |
+             +-----------+------------+
+             |           |            |
+        {progress}   {result}     {error}
+             |           |            |
+             v           v            v
+    onProgress(p)   resolve(ParseResult)  reject(CsvParseError)
+                         |
+                         v
+        useFilesStore.saveFile() [IndexedDB 'files', LRU cap 10]
+                         |
+                         v
+        useCurrentDataset.setDataset() -> navigateTo('/viewer')
+```
 
 ## Related documents
 
-- [`project_overview.md`](project_overview.md) — purpose and macro flow
-- [`tech_stack.md`](tech_stack.md) — framework and tooling versions
-- [`domain_rules.md`](domain_rules.md) — CsvCell rendering rules
+- [`project_overview.md`](project_overview.md) — purpose and macro flow narrative
+- [`tech_stack.md`](tech_stack.md) — framework, runtime, and test tooling versions
+- [`domain_rules.md`](domain_rules.md) — parsing, type inference, and sort/pin rules

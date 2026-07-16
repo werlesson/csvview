@@ -6,9 +6,46 @@
 
 ### Not applicable in this repository
 
-No HTTP/API surface exists: there is no `server/` directory, no `routes/` or `api/` handlers, and no OpenAPI or GraphQL schema (digest `api_surface.present=false`, `evidence: []`). No message/queue formats exist either — no broker, cron, or queue clients found (digest `async.present=false`). The only public contract is the Vue component prop interface of `app/components/CsvCell.vue`: `defineProps<{ value: string | number | null | undefined }>()`, consumed in-process, not over the network.
+No HTTP/API surface exists: there is no `server/` directory, no `routes/` or `api/` handlers, and no OpenAPI or GraphQL schema (digest `api_surface.present=false`, `evidence: []`). `ssr:false` plus Nitro `preset:'static'` (`nuxt.config.ts:12-15`) confirm the app builds to a static SPA with no server runtime to expose endpoints from.
+
+The only asynchronous message contract in the repository is client-side, between the main thread and the Web Worker — documented here in place of network message formats since `digest.async.present=true`.
+
+### Message formats (Web Worker, in-process — not network)
+
+Channel: `Worker` instance created by `useCsvParser.ts:32-37` from `app/services/csvParser.worker.ts` (`type: 'module'`). No queue/broker/topic; messages are `postMessage`/`onmessage` pairs scoped to one Worker instance per parse call.
+
+Request (`ParseRequest`, `app/services/csvParser.ts:277-284`), posted by `useCsvParser.ts:91`:
+```json
+{
+  "content": "id,name,amount\n1,Ana,120.50\n2,Bruno,89.90\n",
+  "fileName": "transactions_2026.csv",
+  "delimiter": null
+}
+```
+
+Responses (`ParseWorkerMessage` union, `app/services/csvParser.ts:287-290`), one or more `progress` messages followed by exactly one terminal `result` or `error`:
+```json
+{ "type": "progress", "progress": 0.42 }
+```
+```json
+{
+  "type": "result",
+  "result": {
+    "header": ["id", "name", "amount"],
+    "rows": [["1", "Ana", "120.50"], ["2", "Bruno", "89.90"]],
+    "row_count": 2,
+    "column_count": 3,
+    "delimiter": "comma"
+  }
+}
+```
+```json
+{ "type": "error", "message": "O arquivo está vazio." }
+```
+
+Retry/DLQ: none implemented. On `error` or `worker.onerror`, `useCsvParser.parseViaWorker` rejects; the caller (`parseText`, `useCsvParser.ts:103-124`) falls back to an inline `parseCsv()` call only when the failure is `WorkerUnavailableError` (Worker could not be created/run) — a real `CsvParseError` from a working parse is propagated to the UI as-is (surfaced in `useOpenFile.ts` `error` ref), with no automatic retry.
 
 ## Related documents
 
-- [`domain_rules.md`](domain_rules.md) — CsvCell rendering behavior
-- [`architecture.md`](architecture.md) — no backend layer present
+- [`domain_rules.md`](domain_rules.md) — parsing rules (delimiter detection, BOM stripping, row normalization) behind these payloads
+- [`architecture.md`](architecture.md) — Web Worker macro flow diagram and integration points
