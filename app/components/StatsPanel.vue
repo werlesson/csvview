@@ -13,8 +13,9 @@ import type { ColumnStats, ColumnType } from '~/services/columnStats'
  * média e o mini-histograma de distribuição. Trocar a coluna selecionada
  * apenas troca as props: o painel reflete sempre a coluna atual.
  *
- * Sem coluna selecionada (`stats` nulo), exibe um estado vazio convidando a
- * selecionar uma coluna.
+ * Sem coluna selecionada (`stats` nulo), o painel não renderiza nada — cabe ao
+ * pai animar sua entrada/saída (ex.: `<Transition>` em torno do componente).
+ * Um botão "X" no cabeçalho emite `close` para o pai limpar a seleção.
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
@@ -23,6 +24,11 @@ const props = defineProps<{
   label: string | null
   /** Estatísticas da coluna (Fase 5); `null` quando não há seleção. */
   stats: ColumnStats | null
+}>()
+
+const emit = defineEmits<{
+  /** Botão "X" do painel acionado: pede ao pai para limpar a seleção (fecha o painel). */
+  (e: 'close'): void
 }>()
 
 /**
@@ -45,8 +51,6 @@ const NUMERIC_KIND_LABELS: Record<'integer' | 'decimal', string> = {
   integer: 'inteiro',
   decimal: 'decimal',
 }
-
-const hasSelection = computed(() => props.stats !== null)
 
 /**
  * Rótulo exibido no badge. Para colunas numéricas deriva de `numericKind`
@@ -93,10 +97,27 @@ function signClass(value: number): string {
 </script>
 
 <template>
-  <aside class="stats-panel" aria-label="Estatísticas da coluna">
+  <aside v-if="stats" class="stats-panel" aria-label="Estatísticas da coluna">
     <Transition name="stats-fade" mode="out-in">
-    <div v-if="hasSelection && stats" :key="label" class="stats-panel__content">
-      <p class="stats-panel__eyebrow">Estatísticas da coluna</p>
+    <div :key="label" class="stats-panel__content">
+      <div class="stats-panel__topbar">
+        <p class="stats-panel__eyebrow">Estatísticas da coluna</p>
+        <button
+          type="button"
+          class="stats-panel__close"
+          aria-label="Fechar estatísticas"
+          @click="emit('close')"
+        >
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+            <path
+              d="M1.5 1.5 L10.5 10.5 M10.5 1.5 L1.5 10.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
 
       <header class="stats-panel__header">
         <span class="stats-panel__hash" aria-hidden="true">#</span>
@@ -169,13 +190,6 @@ function signClass(value: number): string {
         </section>
       </template>
     </div>
-
-    <div v-else key="empty" class="stats-panel__empty" role="status">
-      <p class="stats-panel__empty-title">Nenhuma coluna selecionada</p>
-      <p class="stats-panel__empty-hint">
-        Selecione uma coluna na tabela para ver suas estatísticas.
-      </p>
-    </div>
     </Transition>
   </aside>
 </template>
@@ -227,6 +241,14 @@ function signClass(value: number): string {
   }
 }
 
+/* Linha do topo: eyebrow à esquerda e o "X" de fechar na mesma altura, à direita. */
+.stats-panel__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* Eyebrow — título de seção do painel, em maiúsculas discretas. */
 .stats-panel__eyebrow {
   font-size: 11px;
@@ -271,6 +293,28 @@ function signClass(value: number): string {
   border: 1px solid var(--accent);
   padding: 2px 8px;
   border-radius: var(--radius-pill);
+}
+
+/* Botão "X" de fechar o painel — mesmo tratamento dos ícones do cabeçalho da
+   tabela (ViewerTable `__th-stats`/`__th-pin`): 20×20, sem fundo, accent no hover. */
+.stats-panel__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.stats-panel__close:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 /* Métricas gerais em cartões 2×2 com borda. */
@@ -370,25 +414,6 @@ function signClass(value: number): string {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-3);
-}
-
-.stats-panel__empty {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: center;
-  padding: 24px 12px;
-}
-
-.stats-panel__empty-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.stats-panel__empty-hint {
-  font-size: 13px;
   color: var(--text-3);
 }
 </style>

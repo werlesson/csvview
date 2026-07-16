@@ -63,8 +63,8 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  /** Affordance dedicado de estatísticas acionado (abre/atualiza o painel de stats, UI-06). */
-  (e: 'select-column', index: number): void
+  /** Affordance dedicado de estatísticas acionado (abre/atualiza/fecha o painel de stats, UI-06). */
+  (e: 'select-column', index: number | null): void
   /** Clique simples no cabeçalho: única chave de ordenação, avança asc → desc → sem ordenação (RF-01). */
   (e: 'sort', index: number): void
   /** Shift+clique no cabeçalho: adiciona/avança/remove a coluna nas chaves de ordenação (RF-02). */
@@ -83,9 +83,10 @@ function onHeaderClick(index: number, event: MouseEvent): void {
   else emit('sort', index)
 }
 
-/** Affordance dedicado (ícone) que seleciona a coluna para o painel de estatísticas (UI-06). */
+/** Affordance dedicado (ícone) que seleciona a coluna para o painel de estatísticas; clicar de
+ *  novo na coluna já selecionada fecha o painel (UI-06). */
 function onSelectStats(index: number): void {
-  emit('select-column', index)
+  emit('select-column', index === props.selectedIndex ? null : index)
 }
 
 /** Botão de pin do cabeçalho: alterna a fixação da coluna (RF-06). */
@@ -172,17 +173,24 @@ function thStyleFor(column: ViewerColumn): Record<string, string> {
  * Estilo da célula do corpo virtualizado: largura via `--col-w` e, quando
  * fixada, `position: sticky` + `left` acumulado + fundo opaco (para cobrir as
  * colunas não fixadas que rolam por baixo) — preserva o alinhamento com o
- * cabeçalho fixado (RF-07).
+ * cabeçalho fixado (RF-07). O fundo é aplicado inline (maior prioridade que
+ * `.csv-cell--selected`, cuja tinta é translúcida): quando a coluna também
+ * está selecionada, a tinta accent entra como camada sobre o fundo opaco (em
+ * vez de substituí-lo), para não deixar a coluna fixada transparente no
+ * scroll horizontal.
  */
 function cellStyleFor(column: ViewerColumn): Record<string, string> {
   const style = colWidthStyle(column)
   if (!column.pinned) return style
+  const selected = column.index === props.selectedIndex
   return {
     ...style,
     position: 'sticky',
     left: `${pinnedOffsetFor(column.index)}px`,
     zIndex: '1',
-    background: 'var(--bg-2)',
+    background: selected
+      ? 'linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-2)'
+      : 'var(--bg-2)',
   }
 }
 
@@ -624,6 +632,15 @@ const isEmpty = computed(() => props.rows.length === 0)
 
 .viewer-table__th--selected .viewer-table__th-label {
   color: var(--accent);
+}
+
+/* Fixada + selecionada ao mesmo tempo: `--selected` sozinho troca o fundo
+   opaco de `--pinned` por um tom translúcido (`--accent-soft`), deixando as
+   colunas que rolam por baixo aparecerem através do cabeçalho fixado. A
+   camada translúcida some sobre o fundo opaco (`--bg-2`) para manter a coluna
+   fixada legível durante o scroll horizontal. */
+.viewer-table__th--pinned.viewer-table__th--selected {
+  background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--bg-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

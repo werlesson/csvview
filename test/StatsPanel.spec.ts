@@ -25,12 +25,21 @@ function mountFor(label: string, values: string[]) {
 }
 
 describe('StatsPanel', () => {
-  it('exibe o estado vazio quando não há coluna selecionada', () => {
+  it('não renderiza nada quando não há coluna selecionada', () => {
     const wrapper = mount(StatsPanel, { props: { label: null, stats: null } })
 
-    expect(wrapper.find('.stats-panel__empty').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Nenhuma coluna selecionada')
+    expect(wrapper.find('.stats-panel').exists()).toBe(false)
     expect(wrapper.find('.stats-panel__content').exists()).toBe(false)
+  })
+
+  it('emite close ao clicar no botão "X" do painel', async () => {
+    const wrapper = mount(StatsPanel, {
+      props: { label: 'amount', stats: computeColumnStats(NUMERIC_VALUES) },
+    })
+
+    await wrapper.find('.stats-panel__close').trigger('click')
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('mostra o rótulo e o tipo inferido em pt (inteiro/data/texto)', () => {

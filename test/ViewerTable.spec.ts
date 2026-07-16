@@ -191,6 +191,17 @@ describe('ViewerTable', () => {
     expect(wrapper.emitted('sort-additive')).toBeUndefined()
   })
 
+  // UI-06: clicar de novo no affordance da coluna já selecionada fecha o painel.
+  it('UI-06: affordance de estatísticas na coluna já selecionada emite select-column(null)', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: ROWS, selectedIndex: 0 },
+    })
+
+    await wrapper.findAll('.viewer-table__th-stats')[0]!.trigger('click')
+
+    expect(wrapper.emitted('select-column')).toEqual([[null]])
+  })
+
   // UI-01: indicador de direção distinguível por forma (não apenas cor).
   it('UI-01: mostra indicador de direção distinguível por forma (asc ≠ desc), nada quando não ordenada', () => {
     const noneWrapper = mount(ViewerTable, {
