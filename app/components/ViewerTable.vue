@@ -60,8 +60,10 @@ const props = withDefaults(
     sortKeys?: SortKey[]
     /** Há filtros de coluna e/ou busca ativos (RF-06, UI-03) — muda a dica e a ação do estado vazio. */
     hasActiveFilters?: boolean
+    /** Estado vazio calculado por `useViewer` (RF-06); quando omitido, cai para `rows.length === 0`. */
+    noResults?: boolean
   }>(),
-  { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false },
+  { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false, noResults: undefined },
 )
 
 const emit = defineEmits<{
@@ -309,7 +311,7 @@ const virtualRows = computed(() => rowVirtualizer.value.getVirtualItems())
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize())
 
 /** Sem nenhuma linha para exibir (busca sem resultados ou dataset vazio). */
-const isEmpty = computed(() => props.rows.length === 0)
+const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
 </script>
 
 <template>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import ViewerToolbar from '~/components/ViewerToolbar.vue'
 import ViewerTable from '~/components/ViewerTable.vue'
 import StatsPanel from '~/components/StatsPanel.vue'
+import FilterPanel from '~/components/FilterPanel.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
 
@@ -34,7 +35,6 @@ useHead({
 const {
   search,
   columns,
-  totalRows,
   toggleColumn,
   selectedIndex,
   selectedColumn,
@@ -49,19 +49,50 @@ const {
   reorderColumn,
   togglePin,
   displayColumns,
+  filters,
+  activeFilters,
+  activeFilterCount,
+  addFilter,
+  updateFilter,
+  removeFilter,
+  clearFilters,
+  noResults,
+  visibleRowCount,
 } = useViewer(() => dataset.value)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
+
+/** Visibilidade do painel de filtros (UI-01) — nenhuma persistência (RF-07). */
+const showFilters = ref(false)
+
+function onToggleFilters(): void {
+  showFilters.value = !showFilters.value
+}
+
+/** Só os filtros que restringem linhas (não-inertes) acionam a mensagem/ação de "limpar filtros" no estado vazio. */
+const hasActiveFilters = computed(() => activeFilters.value.length > 0)
 </script>
 
 <template>
   <section v-if="hasDataset" class="viewer">
     <ViewerToolbar
       v-model:search="search"
-      :row-count="totalRows"
+      :row-count="visibleRowCount"
       :columns="columns"
+      :active-filter-count="activeFilterCount"
       @toggle-column="toggleColumn"
       @toggle-pin="togglePin"
+      @toggle-filters="onToggleFilters"
+    />
+
+    <FilterPanel
+      v-if="showFilters"
+      :columns="columns"
+      :filters="filters"
+      @add="addFilter"
+      @update="updateFilter"
+      @remove="removeFilter"
+      @clear="clearFilters"
     />
 
     <div class="viewer__body">
@@ -70,12 +101,15 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
         :rows="sortedRows"
         :selected-index="selectedIndex"
         :sort-keys="sortKeys"
+        :has-active-filters="hasActiveFilters"
+        :no-results="noResults"
         @select-column="selectColumn"
         @sort="sortColumn"
         @sort-additive="sortColumnAdditive"
         @resize="resizeColumn"
         @reorder="reorderColumn"
         @toggle-pin="togglePin"
+        @clear-filters="clearFilters"
       />
 
       <Transition name="stats-grow">
