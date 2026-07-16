@@ -8,6 +8,7 @@ import FilterChips from '~/components/FilterChips.vue'
 import ExportModal from '~/components/ExportModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
+import { useViewerSession } from '~/composables/useViewerSession'
 
 /**
  * Tela do **Viewer** (Fase 7).
@@ -38,6 +39,7 @@ const {
   search,
   columns,
   toggleColumn,
+  hidden,
   selectedIndex,
   selectedColumn,
   selectedStats,
@@ -46,9 +48,12 @@ const {
   sortedRows,
   sortColumn,
   sortColumnAdditive,
+  widths,
   resizeColumn,
   columnWidth,
+  order,
   reorderColumn,
+  pinned,
   togglePin,
   displayColumns,
   filters,
@@ -62,6 +67,8 @@ const {
   filteredRows,
   columnDuplicateCounts,
 } = useViewer(() => dataset.value)
+
+useViewerSession({ filters, sortKeys, hidden, widths, order, pinned }, meta)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 

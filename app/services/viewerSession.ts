@@ -39,6 +39,12 @@ export type SessionPayload = Pick<
  * `SessionRecord` (CT-01): `Set`/`Map` viram arrays/pares, preservando a
  * ordem de iteração (relevante para `pinned`, que registra a sequência de
  * fixação).
+ *
+ * `filters`/`sortKeys` passam por um round-trip JSON: em produção, `snapshot`
+ * vem de refs reativas do Vue (`useViewer.ts`), cujos elementos de array são
+ * objetos-Proxy — o `IDBObjectStore.put` do IndexedDB usa `structuredClone`
+ * internamente, que lança `DataCloneError` sobre um Proxy. O round-trip
+ * produz objetos simples equivalentes, seguros para clonagem estruturada.
  */
 export function serializeViewerSession(
   snapshot: ViewerSessionSnapshot,
@@ -46,8 +52,8 @@ export function serializeViewerSession(
 ): SessionPayload {
   return {
     columnCount,
-    filters: [...snapshot.filters],
-    sortKeys: [...snapshot.sortKeys],
+    filters: JSON.parse(JSON.stringify(snapshot.filters)) as ColumnFilter[],
+    sortKeys: JSON.parse(JSON.stringify(snapshot.sortKeys)) as SessionSortKey[],
     hidden: [...snapshot.hidden],
     widths: [...snapshot.widths.entries()],
     order: [...snapshot.order],
