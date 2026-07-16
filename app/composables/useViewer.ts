@@ -6,7 +6,6 @@ import {
   computeColumnStats,
   inferColumnType,
   makeComparator,
-  rowHasDuplicateValue,
   type ColumnStats,
   type ColumnType,
 } from '~/services/columnStats'
@@ -157,14 +156,6 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
       computeColumnDuplicateCounts(columnValues(dataset.value.rows, index)),
     ),
   )
-
-  /**
-   * Verifica se `row` contém ao menos uma célula cujo valor está duplicado na
-   * sua coluna, segundo `columnDuplicateCounts` (RF-03).
-   */
-  function isRowDuplicate(row: string[]): boolean {
-    return rowHasDuplicateValue(row, columnDuplicateCounts.value)
-  }
 
   /** Todas as colunas do dataset, com tipo, visibilidade, pin e largura atuais. */
   const columns = computed<ViewerColumn[]>(() =>
@@ -513,7 +504,6 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     columnTypes,
     columnStats,
     columnDuplicateCounts,
-    isRowDuplicate,
     filteredRows,
     filters,
     activeFilters,

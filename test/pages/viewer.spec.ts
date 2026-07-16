@@ -254,7 +254,7 @@ describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
     return wrapper
   }
 
-  it('monta sem erro com um dataset contendo as quatro condições e repassa columnDuplicateCounts/isRowDuplicate não vazios ao ViewerTable', async () => {
+  it('monta sem erro com um dataset contendo as quatro condições e repassa columnDuplicateCounts não vazio ao ViewerTable', async () => {
     const wrapper = await mountHighlightViewer()
     await nextTick()
     await nextTick()
@@ -262,9 +262,5 @@ describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
     // Célula duplicada ("Ana", coluna name): badge "dup ×2" no DOM — só aparece
     // se `columnDuplicateCounts` chegou não vazio ao ViewerTable.
     expect(wrapper.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
-
-    // Linha com valor duplicado: destaque de linha inteira — só aparece se
-    // `isRowDuplicate` chegou funcional (não vazio) ao ViewerTable (RF-03).
-    expect(wrapper.findAll('.viewer-table__row--duplicate').length).toBeGreaterThan(0)
   })
 })

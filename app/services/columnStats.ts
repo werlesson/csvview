@@ -498,25 +498,6 @@ export function computeColumnDuplicateCounts(
   return counts
 }
 
-/**
- * Verifica se uma linha contém ao menos uma célula cujo valor está duplicado
- * na sua coluna, segundo os mapas já calculados por
- * `computeColumnDuplicateCounts` (um por coluna, na mesma ordem de `row`).
- * O(colunas): itera apenas as colunas da linha, sem varrer o dataset (RF-03).
- */
-export function rowHasDuplicateValue(
-  row: readonly Cell[],
-  duplicateCounts: readonly Map<string, number>[],
-): boolean {
-  for (let i = 0; i < row.length; i += 1) {
-    const value = row[i]
-    if (isEmptyCell(value)) continue
-    const count = duplicateCounts[i]?.get(String(value).trim())
-    if (count !== undefined && count > 1) return true
-  }
-  return false
-}
-
 /** Dataset mínimo necessário para o cálculo por coluna. */
 export interface StatsDataset {
   header: string[]

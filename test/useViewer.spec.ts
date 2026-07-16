@@ -143,7 +143,7 @@ describe('useViewer', () => {
     })
   })
 
-  describe('duplicados por coluna (RF-02, RF-03)', () => {
+  describe('duplicados por coluna (RF-02)', () => {
     function makeDuplicateDataset(): Dataset {
       return {
         header: ['id', 'group', 'amount'],
@@ -172,16 +172,8 @@ describe('useViewer', () => {
       expect(columnDuplicateCounts.value[1]!.get('B')).toBe(1)
     })
 
-    it('isRowDuplicate retorna true/false corretamente para linhas de um dataset fixo', () => {
-      const { isRowDuplicate } = useViewer(() => makeDuplicateDataset())
-
-      expect(isRowDuplicate(['1', 'A', '10'])).toBe(true)
-      expect(isRowDuplicate(['3', 'A', '30'])).toBe(true)
-      expect(isRowDuplicate(['2', 'B', '20'])).toBe(false)
-    })
-
-    it('ocultar uma coluna não altera columnDuplicateCounts nem isRowDuplicate', () => {
-      const { columnDuplicateCounts, isRowDuplicate, hideColumn } = useViewer(
+    it('ocultar uma coluna não altera columnDuplicateCounts', () => {
+      const { columnDuplicateCounts, hideColumn } = useViewer(
         () => makeDuplicateDataset(),
       )
 
@@ -192,8 +184,6 @@ describe('useViewer', () => {
       expect(columnDuplicateCounts.value.map((m) => [...m.entries()])).toEqual(
         before,
       )
-      expect(isRowDuplicate(['1', 'A', '10'])).toBe(true)
-      expect(isRowDuplicate(['2', 'B', '20'])).toBe(false)
     })
   })
 

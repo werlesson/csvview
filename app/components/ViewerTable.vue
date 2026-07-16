@@ -66,8 +66,6 @@ const props = withDefaults(
     noResults?: boolean
     /** Mapa valor→ocorrências por coluna (índice original), sobre o dataset completo (RF-02). */
     columnDuplicateCounts?: Map<string, number>[]
-    /** Verifica se a linha completa contém ao menos uma célula duplicada (RF-03). */
-    isRowDuplicate?: (row: string[]) => boolean
   }>(),
   { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false, noResults: undefined },
 )
@@ -487,7 +485,6 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
           v-for="virtualRow in virtualRows"
           :key="virtualRow.key"
           class="viewer-table__row"
-          :class="{ 'viewer-table__row--duplicate': isRowDuplicate?.(rows[virtualRow.index]!) }"
           :style="{ width: gridWidth, transform: `translateY(${virtualRow.start}px)` }"
         >
           <CsvCell
@@ -742,22 +739,6 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
 /* Hover de linha: realça a linha inteira sob o cursor (fiel ao design). */
 .viewer-table__body .viewer-table__row:hover :deep(.csv-cell) {
   background: var(--bg-hover);
-}
-
-/* Linha com ao menos uma célula duplicada (RF-03): fundo distinguível na
-   própria `<tr>`, atrás das células (que por padrão são transparentes) —
-   aditivo ao hover, que colore as células (`:deep(.csv-cell)`, acima) num
-   elemento diferente, então os dois efeitos compõem em vez de se
-   substituírem (RNF-01). Tom `--accent-soft` — mesma família de cor do badge
-   "dup ×N" e do swatch "duplicado" da legenda (`HighlightLegend.vue:70-73`),
-   por decisão do SPEC (FLEXIBLE). `--warning-soft` foi descartado: é a mesma
-   cor do destaque de "data inválida", o que confundia visualmente uma linha
-   com duplicado com uma célula de data inválida (achado em verificação
-   manual). A composição com `csv-cell--selected` (também `--accent-soft`)
-   permanece aditiva e distinguível: seleção de coluna tinge uma coluna
-   inteira, duplicado tinge a linha inteira — formas diferentes, mesma cor. */
-.viewer-table__row--duplicate {
-  background-color: var(--accent-soft);
 }
 
 .viewer-table__th-button {

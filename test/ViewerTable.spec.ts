@@ -604,9 +604,8 @@ describe('ViewerTable', () => {
     })
   })
 
-  // T06/RF-02,RF-03,RF-04,RF-05,RNF-01: sinais de destaque por célula e destaque
-  // de linha duplicada, fiados a partir das props `columnDuplicateCounts`/
-  // `isRowDuplicate`. Precisa de linhas de corpo reais (ver MEMORY
+  // T06/RF-02,RF-04,RF-05,RNF-01: sinais de destaque por célula, fiados a partir
+  // da prop `columnDuplicateCounts`. Precisa de linhas de corpo reais (ver MEMORY
   // viewertable-virtualizer-no-body-rows-jsdom): stub de offsetHeight + duplo nextTick.
   describe('T06: destaques por célula e por linha', () => {
     beforeEach(() => {
@@ -666,26 +665,6 @@ describe('ViewerTable', () => {
       // Coluna sem contagem: nenhum badge.
       const idCell = rows[0]!.findAll('.csv-cell')[0]!
       expect(idCell.find('.csv-cell__dup-badge').exists()).toBe(false)
-    })
-
-    it('RF-03: linha cujo isRowDuplicate retorna true recebe a classe viewer-table__row--duplicate', async () => {
-      const isRowDuplicate = (row: string[]) => row[1] === 'Ana'
-      const wrapper = await mountHighlighted({ isRowDuplicate })
-
-      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
-      expect(rows).toHaveLength(3)
-      for (const row of rows) {
-        expect(row.classes()).toContain('viewer-table__row--duplicate')
-      }
-    })
-
-    it('RF-03: sem isRowDuplicate, nenhuma linha recebe a classe de destaque de duplicado', async () => {
-      const wrapper = await mountHighlighted()
-
-      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
-      for (const row of rows) {
-        expect(row.classes()).not.toContain('viewer-table__row--duplicate')
-      }
     })
 
     it('RF-04: célula number negativa recebe negative=true (classe csv-cell--negative); positiva não', async () => {
@@ -748,12 +727,10 @@ describe('ViewerTable', () => {
         new Map<string, number>(),
         new Map<string, number>(),
       ]
-      const isRowDuplicate = (row: string[]) => row[1] === 'dup'
 
       const wrapper = await mountHighlighted({
         rows: bigRows,
         columnDuplicateCounts,
-        isRowDuplicate,
       })
 
       const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
@@ -814,15 +791,12 @@ describe('ViewerTable', () => {
       new Map<string, number>(),
       new Map<string, number>(),
     ]
-    const isRowDuplicate = (row: string[]) => row[1] === 'Ana'
-
-    it('exibe vazio, duplicado (badge + linha), negativo, data inválida e a legenda, todos no mesmo mount, sem trigger/click prévio', async () => {
+    it('exibe vazio, duplicado (badge), negativo, data inválida e a legenda, todos no mesmo mount, sem trigger/click prévio', async () => {
       const wrapper = mount(ViewerTable, {
         props: {
           columns: allHighlightsColumns(),
           rows: allHighlightsRows,
           columnDuplicateCounts,
-          isRowDuplicate,
         },
       })
       await nextTick()
@@ -839,11 +813,6 @@ describe('ViewerTable', () => {
       // RF-02: células "Ana" (linhas 1 e 2) — badge "dup ×2".
       expect(rows[0]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
       expect(rows[1]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
-
-      // RF-03: linhas com valor duplicado — destaque de fundo na linha inteira.
-      expect(rows[0]!.classes()).toContain('viewer-table__row--duplicate')
-      expect(rows[1]!.classes()).toContain('viewer-table__row--duplicate')
-      expect(rows[2]!.classes()).not.toContain('viewer-table__row--duplicate')
 
       // RF-04: célula number negativa (-50 em amount, linha 2) — classe csv-cell--negative.
       expect(rows[1]!.findAll('.csv-cell')[2]!.classes()).toContain('csv-cell--negative')
