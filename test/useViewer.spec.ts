@@ -143,6 +143,60 @@ describe('useViewer', () => {
     })
   })
 
+  describe('duplicados por coluna (RF-02, RF-03)', () => {
+    function makeDuplicateDataset(): Dataset {
+      return {
+        header: ['id', 'group', 'amount'],
+        rows: [
+          ['1', 'A', '10'],
+          ['2', 'B', '20'],
+          ['3', 'A', '30'],
+          ['4', 'A', '40'],
+        ],
+      }
+    }
+
+    it('columnDuplicateCounts não muda quando um filtro/busca reduz filteredRows', () => {
+      const { search, filteredRows, columnDuplicateCounts } = useViewer(() =>
+        makeDuplicateDataset(),
+      )
+
+      expect(columnDuplicateCounts.value[1]!.get('A')).toBe(3)
+
+      // Filtra para deixar visível apenas uma das linhas "A" (busca por "1").
+      search.value = '1'
+      expect(filteredRows.value).toHaveLength(1)
+
+      // "dup ×3" permanece "dup ×3", não vira "dup ×2" (RF-02 AC).
+      expect(columnDuplicateCounts.value[1]!.get('A')).toBe(3)
+      expect(columnDuplicateCounts.value[1]!.get('B')).toBe(1)
+    })
+
+    it('isRowDuplicate retorna true/false corretamente para linhas de um dataset fixo', () => {
+      const { isRowDuplicate } = useViewer(() => makeDuplicateDataset())
+
+      expect(isRowDuplicate(['1', 'A', '10'])).toBe(true)
+      expect(isRowDuplicate(['3', 'A', '30'])).toBe(true)
+      expect(isRowDuplicate(['2', 'B', '20'])).toBe(false)
+    })
+
+    it('ocultar uma coluna não altera columnDuplicateCounts nem isRowDuplicate', () => {
+      const { columnDuplicateCounts, isRowDuplicate, hideColumn } = useViewer(
+        () => makeDuplicateDataset(),
+      )
+
+      const before = columnDuplicateCounts.value.map((m) => [...m.entries()])
+
+      hideColumn(1) // oculta "group"
+
+      expect(columnDuplicateCounts.value.map((m) => [...m.entries()])).toEqual(
+        before,
+      )
+      expect(isRowDuplicate(['1', 'A', '10'])).toBe(true)
+      expect(isRowDuplicate(['2', 'B', '20'])).toBe(false)
+    })
+  })
+
   describe('ordenação (máquina de estados + sortedRows)', () => {
     // RF-01 — clique simples: ciclo asc → desc → sem ordenação
     it('sort-single-cycle: 3 cliques em sortColumn ciclam asc, desc e ordem original', () => {
