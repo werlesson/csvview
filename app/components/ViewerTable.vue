@@ -538,10 +538,16 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
 /* Legenda fixa (T07, UI-01): mesma técnica de sticky do cabeçalho
    (`.viewer-table__head`), permanecendo visível acima dele durante o scroll
    vertical — `z-index` maior para ficar por cima do cabeçalho quando ambos
-   colidem no topo do scroller. */
+   colidem no topo do scroller. `left: 0` (além de `top: 0`) é necessário
+   porque a legenda é irmã da `<table>` larga dentro do MESMO scroller
+   (`.viewer-table`, `overflow: auto` nos dois eixos): sem `left`, o sticky só
+   vale no eixo vertical e a legenda rola para fora de vista no scroll
+   horizontal (achado em uso real) — `left: 0` prende também a borda esquerda
+   da legenda à borda visível do scroller, como um canto sticky. */
 .viewer-table__legend {
   position: sticky;
   top: 0;
+  left: 0;
   z-index: 2;
 }
 

@@ -4,7 +4,7 @@
 - Source: developer description via /plan
 - Service: csvview (única app, SPA client-side)
 - Tier: standard
-- Version: 1.3
+- Version: 1.3.1
 - Architecture references: `AGENTS.md`, `docs/agents/architecture.md`, `docs/agents/domain_rules.md`
 
 ## Context
@@ -152,11 +152,14 @@ componente novo da legenda fixa no topo da tabela.
 ### UI Requirements
 
 - UI-01 [Ubiquitous]: A `ViewerTable` SHALL exibir uma legenda fixa no topo da tabela (acima do
-  cabeçalho de colunas, presente em todo scroll) com um swatch + rótulo para cada um dos quatro
-  tipos de destaque: "vazio" (padrão hachurado), "duplicado", "negativo", "data inválida" — fiel
-  a `.spec/init/design/screen-5-highlights.png` ("Destaques na tabela").
-  - AC: a legenda está sempre visível no topo da tabela (não requer interação para aparecer) e
-    contém exatamente 4 pares swatch+rótulo, um por tipo de destaque.
+  cabeçalho de colunas, presente em todo scroll **vertical e horizontal** — revisado em v1.3.1,
+  ver Amendments) com um swatch + rótulo para cada um dos quatro tipos de destaque: "vazio"
+  (padrão hachurado), "duplicado", "negativo", "data inválida" — fiel a
+  `.spec/init/design/screen-5-highlights.png` ("Destaques na tabela").
+  - AC: a legenda está sempre visível no topo da tabela (não requer interação para aparecer),
+    contém exatamente 4 pares swatch+rótulo, um por tipo de destaque, e permanece na mesma posição
+    da viewport tanto ao rolar a tabela verticalmente quanto horizontalmente (quando há mais
+    colunas do que cabem na largura visível).
 
 ### Non-Functional Requirements
 
@@ -256,3 +259,16 @@ Verificação manual pelo developer, com um CSV real (767 linhas), encontrou dua
    badge "dup ×N" por célula (RF-02), que já é suficiente para apontar duplicidade sem ruído
    visual. Ver RF-03 (marcado como removido acima), Scope (Out) e RF-06 (lista revisada). Task de
    remoção: T11 (`PLAN.md`), Fase 7 (`PHASES.md`).
+
+### v1.3.1 — legenda rolava com o scroll horizontal (fix pontual, sem nova fase)
+Verificação manual pelo developer relatou que a legenda (UI-01) não ficava fixa ao rolar a tabela
+horizontalmente — só o scroll vertical estava coberto. Causa: `.viewer-table__legend`
+(`ViewerTable.vue`) usava `position: sticky; top: 0` (mesma técnica do `<thead>`), mas a legenda é
+irmã da `<table>` larga dentro do MESMO scroller (`.viewer-table`, `overflow: auto` nos dois
+eixos) — sticky sem `left` só prende o eixo vertical; no eixo horizontal a legenda permanece na sua
+posição de fluxo normal e sai de vista junto com o conteúdo ao rolar. Diferente do `<thead>`
+(que deve mesmo rolar horizontalmente junto com as colunas — só as colunas fixadas via pin ficam
+paradas), a legenda é chrome de UI e deve ficar sempre visível nos dois eixos. Corrigido
+adicionando `left: 0` à mesma regra sticky (commit pendente nesta sessão), verificado
+visualmente com um dataset de 10 colunas forçando overflow horizontal. `yarn test` (443/443) sem
+alteração de asserção — nenhum teste cobria a posição sticky no eixo X.
