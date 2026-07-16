@@ -8,6 +8,11 @@ import {
   type ColumnStats,
   type ColumnType,
 } from '~/services/columnStats'
+import {
+  isFilterInert,
+  matchesFilters,
+  type ColumnFilter,
+} from '~/services/columnFilters'
 
 /**
  * Estado do **Viewer** (Fase 7): busca global, seleção de colunas e derivações
@@ -98,6 +103,13 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
    * Estado apenas em memória (RNF-04).
    */
   const pinned = ref<Set<number>>(new Set())
+  /**
+   * Filtros de coluna ativos (RF-07): cada entrada é um `ColumnFilter` (chip
+   * do painel de filtros), referenciando a coluna por índice **original** —
+   * inclusive colunas ocultas. Estado apenas em memória de sessão; nada é
+   * gravado em IndexedDB/localStorage.
+   */
+  const filters = ref<ColumnFilter[]>([])
 
   const dataset = computed<Dataset>(() => toValue(source) ?? EMPTY_DATASET)
 
@@ -153,18 +165,41 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   const isSearching = computed(() => search.value.trim() !== '')
 
   /**
-   * Linhas que satisfazem a busca. O termo casa (ignorando caixa) em qualquer
-   * célula da linha — inclusive de colunas ocultas. Sem termo, devolve todas as
-   * linhas (limpar a busca restaura o dataset completo).
+   * Filtros não-inertes (RF-05): só estes restringem `filteredRows`. Um filtro
+   * cujo operador exige valor e ainda não o recebeu é ignorado até completar.
+   */
+  const activeFilters = computed<ColumnFilter[]>(() =>
+    filters.value.filter((filter) => !isFilterInert(filter)),
+  )
+
+  /** Nº de filtros (chips) no painel, ativos ou não (UI-02). */
+  const activeFilterCount = computed(() => filters.value.length)
+
+  /**
+   * Linhas que satisfazem a busca **e** todos os filtros de coluna ativos
+   * (RF-03, RF-04): o termo casa (ignorando caixa) em qualquer célula da linha
+   * — inclusive de colunas ocultas — e cada filtro é avaliado por
+   * `matchesFilters` na mesma passagem O(N) (RNF-01). Sem termo nem filtros
+   * ativos, devolve todas as linhas (limpar busca e filtros restaura o
+   * dataset completo).
    */
   const filteredRows = computed<string[][]>(() => {
     const term = search.value.trim().toLowerCase()
-    if (term === '') return dataset.value.rows
-    return dataset.value.rows.filter((row) =>
-      row.some(
-        (cell) => cell != null && String(cell).toLowerCase().includes(term),
-      ),
-    )
+    const activeFiltersList = activeFilters.value
+    if (term === '' && activeFiltersList.length === 0) return dataset.value.rows
+
+    const types = columnTypes.value
+    return dataset.value.rows.filter((row) => {
+      if (
+        term !== '' &&
+        !row.some(
+          (cell) => cell != null && String(cell).toLowerCase().includes(term),
+        )
+      ) {
+        return false
+      }
+      return matchesFilters(activeFiltersList, row, types)
+    })
   })
 
   /**
@@ -202,9 +237,14 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   const totalRows = computed(() => dataset.value.rows.length)
   /** Nº de linhas atualmente exibidas (após a busca). */
   const visibleRowCount = computed(() => filteredRows.value.length)
-  /** A busca não retornou nenhuma linha — dispara o estado vazio (US-2.2). */
+  /**
+   * A busca e/ou os filtros ativos não retornaram nenhuma linha — dispara o
+   * estado vazio (US-2.2, RF-06).
+   */
   const noResults = computed(
-    () => isSearching.value && filteredRows.value.length === 0,
+    () =>
+      (isSearching.value || activeFilters.value.length > 0) &&
+      filteredRows.value.length === 0,
   )
 
   /** Alterna a visibilidade de uma coluna (mostrar/ocultar). */
@@ -228,6 +268,33 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   /** Limpa a busca, restaurando o dataset completo. */
   function clearSearch(): void {
     search.value = ''
+  }
+
+  /** Adiciona um novo filtro de coluna (chip) ao painel de filtros (RF-05). */
+  function addFilter(filter: ColumnFilter): void {
+    filters.value = [...filters.value, filter]
+  }
+
+  /**
+   * Atualiza o filtro na posição `index` (coluna, operador e/ou valor) sem
+   * afetar os demais; no-op se `index` estiver fora do intervalo (RF-05).
+   */
+  function updateFilter(index: number, patch: Partial<ColumnFilter>): void {
+    const current = filters.value[index]
+    if (current === undefined) return
+    const next = [...filters.value]
+    next[index] = { ...current, ...patch }
+    filters.value = next
+  }
+
+  /** Remove o filtro na posição `index`, reampliando as linhas que ele excluía. */
+  function removeFilter(index: number): void {
+    filters.value = filters.value.filter((_, i) => i !== index)
+  }
+
+  /** Remove todos os filtros de coluna, restaurando o efeito só da busca. */
+  function clearFilters(): void {
+    filters.value = []
   }
 
   /**
@@ -416,6 +483,13 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     columnTypes,
     columnStats,
     filteredRows,
+    filters,
+    activeFilters,
+    activeFilterCount,
+    addFilter,
+    updateFilter,
+    removeFilter,
+    clearFilters,
     sortKeys,
     sortedRows,
     sortColumn,
