@@ -617,18 +617,26 @@ describe('ViewerTable', () => {
       vi.restoreAllMocks()
     })
 
+    // T10: `created` NÃO força `type: 'date'` — num dataset real, `inferColumnType`
+    // tipa `text` assim que uma célula reprova `isDateValue` (aqui, '05/13/26').
+    // Quem decide o destaque RF-05 é `isDateLikeColumn` a partir dos valores reais
+    // da coluna (maioria > 50% válida), não `column.type`.
     function highlightColumns(): ViewerColumn[] {
       return [
         { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
         { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
         { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
-        { index: 3, label: 'created', type: 'date', visible: true, pinned: false, width: 180 },
+        { index: 3, label: 'created', type: 'text', visible: true, pinned: false, width: 180 },
       ]
     }
 
+    // `created`: 2 de 3 preenchidas são ISO válidas (maioria > 50%) e uma é
+    // '05/13/26' (nem ISO nem DMY de 4 dígitos) — isDateLikeColumn(created) === true,
+    // então apenas a célula '05/13/26' recebe invalidDate=true.
     const highlightRows = [
       ['1', 'Ana', '100', '2026-01-04'],
       ['2', 'Ana', '-50', '05/13/26'],
+      ['3', 'Ana', '30', '2026-02-10'],
     ]
 
     async function mountHighlighted(extraProps: Record<string, unknown> = {}) {
@@ -643,17 +651,17 @@ describe('ViewerTable', () => {
     it('RF-02: célula com valor duplicado na coluna recebe o dupCount correto (badge "dup ×N")', async () => {
       const columnDuplicateCounts = [
         new Map<string, number>(),
-        new Map<string, number>([['Ana', 2]]),
+        new Map<string, number>([['Ana', 3]]),
         new Map<string, number>(),
         new Map<string, number>(),
       ]
       const wrapper = await mountHighlighted({ columnDuplicateCounts })
 
       const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
-      expect(rows).toHaveLength(2)
+      expect(rows).toHaveLength(3)
       for (const row of rows) {
         const nameCell = row.findAll('.csv-cell')[1]!
-        expect(nameCell.find('.csv-cell__dup-badge').text()).toBe('dup ×2')
+        expect(nameCell.find('.csv-cell__dup-badge').text()).toBe('dup ×3')
       }
       // Coluna sem contagem: nenhum badge.
       const idCell = rows[0]!.findAll('.csv-cell')[0]!
@@ -665,7 +673,7 @@ describe('ViewerTable', () => {
       const wrapper = await mountHighlighted({ isRowDuplicate })
 
       const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
-      expect(rows).toHaveLength(2)
+      expect(rows).toHaveLength(3)
       for (const row of rows) {
         expect(row.classes()).toContain('viewer-table__row--duplicate')
       }
@@ -702,6 +710,18 @@ describe('ViewerTable', () => {
       expect(invalidDate.classes()).toContain('csv-cell--invalid-date')
       expect(invalidDate.text()).toContain('⚠')
       expect(invalidDate.text()).toContain('05/13/26')
+    })
+
+    it('RF-05: coluna cuja maioria falha isDateValue não aplica o destaque a nenhuma célula', async () => {
+      // "name" (index 1) é texto livre; 'Ana' coincidentemente não é data, mas
+      // nenhuma célula da coluna é reconhecida como data — isDateLikeColumn === false.
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      for (const row of rows) {
+        const nameCell = row.findAll('.csv-cell')[1]!
+        expect(nameCell.classes()).not.toContain('csv-cell--invalid-date')
+      }
     })
 
     it('RNF-01: destaques coexistem com seleção de coluna e alinhamento numérico sem removê-los', async () => {

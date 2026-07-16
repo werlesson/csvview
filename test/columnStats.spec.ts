@@ -7,6 +7,7 @@ import {
   histogramBinCount,
   inferColumnType,
   isBooleanValue,
+  isDateLikeColumn,
   isEmailValue,
   isUrlValue,
   makeComparator,
@@ -444,6 +445,33 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       const duplicateCounts = [computeColumnDuplicateCounts(['A', 'B', 'C'])]
 
       expect(rowHasDuplicateValue(['B'], duplicateCounts)).toBe(false)
+    })
+  })
+
+  describe('isDateLikeColumn', () => {
+    it('maioria (> 50%) das células preenchidas válida → true', () => {
+      // 2 de 3 preenchidas válidas (ISO); '05/13/26' não é ISO nem DMY (ano com 2 dígitos).
+      expect(
+        isDateLikeColumn(['2026-01-04', '2026-01-05', '05/13/26']),
+      ).toBe(true)
+    })
+
+    it('maioria das células preenchidas inválida (≤ 50%) → false', () => {
+      // 1 de 3 preenchidas válida.
+      expect(
+        isDateLikeColumn(['05/13/26', '05/14/26', '2026-01-04']),
+      ).toBe(false)
+    })
+
+    it('só células vazias → false (sem preenchidas, não há maioria)', () => {
+      expect(isDateLikeColumn(['', null, undefined])).toBe(false)
+    })
+
+    it('executa em uma única passagem O(N), mesmo para datasets grandes', () => {
+      const values = Array.from({ length: 20_000 }, (_, i) =>
+        i % 3 === 0 ? '05/13/26' : `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      )
+      expect(isDateLikeColumn(values)).toBe(true)
     })
   })
 })

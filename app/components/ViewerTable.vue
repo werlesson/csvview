@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
 import HighlightLegend from '~/components/HighlightLegend.vue'
-import { isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
+import { isDateLikeColumn, isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
 /**
@@ -342,9 +342,27 @@ function negativeFor(column: ViewerColumn, value: string | undefined): boolean {
   return parsed !== null && parsed < 0
 }
 
-/** Coluna `date` cujo valor preenchido não satisfaz `isDateValue` (RF-05). */
+/**
+ * Coluna "parece data" (`isDateLikeColumn`, RF-05 v1.2), pré-calculada uma vez
+ * por coluna a partir das linhas recebidas — não recomputada por célula
+ * renderizada. Substitui o gate `column.type === 'date'`, inatingível com
+ * dados reais: `inferColumnType` só tipa `date` quando 100% das células
+ * preenchidas são válidas, o que impede a própria célula inválida que RF-05
+ * precisa detectar de existir numa coluna `date` (ver `SPEC.md` § Amendments
+ * v1.2).
+ */
+const dateLikeColumns = computed<Map<number, boolean>>(() => {
+  const result = new Map<number, boolean>()
+  for (const column of props.columns) {
+    const values = props.rows.map((row) => row[column.index])
+    result.set(column.index, isDateLikeColumn(values))
+  }
+  return result
+})
+
+/** Coluna "parece data" (`isDateLikeColumn`) cujo valor preenchido não satisfaz `isDateValue` (RF-05). */
 function invalidDateFor(column: ViewerColumn, value: string | undefined): boolean {
-  return column.type === 'date' && !isEmptyCell(value) && !isDateValue(value)
+  return (dateLikeColumns.value.get(column.index) ?? false) && !isEmptyCell(value) && !isDateValue(value)
 }
 </script>
 
