@@ -122,6 +122,25 @@ describe('useViewer', () => {
       ])
     })
 
+    it('expõe hidden mutável externamente, refletindo em columns/visibleColumns', () => {
+      const { hidden, columns, visibleColumns } = useViewer(() =>
+        makeDataset(),
+      )
+
+      expect(hidden.value).toEqual(new Set())
+
+      hidden.value = new Set([1])
+      expect(visibleColumns.value.map((c) => c.label)).toEqual(['id', 'amount'])
+      expect(columns.value[1]!.visible).toBe(false)
+
+      hidden.value = new Set()
+      expect(visibleColumns.value.map((c) => c.label)).toEqual([
+        'id',
+        'name',
+        'amount',
+      ])
+    })
+
     // columns-hidden-stats-intact → busca/stats inalteradas com coluna oculta
     it('columns-hidden-stats-intact: busca e estatísticas permanecem corretas com coluna oculta', () => {
       const { search, filteredRows, columnStats, hideColumn } = useViewer(() =>

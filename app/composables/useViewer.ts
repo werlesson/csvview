@@ -499,6 +499,7 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
 
   return {
     search,
+    hidden,
     columns,
     visibleColumns,
     columnTypes,

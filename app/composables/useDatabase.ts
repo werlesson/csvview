@@ -4,14 +4,16 @@ import {
   type DBSchema,
   type IDBPDatabase,
 } from 'idb'
+import type { ColumnFilter } from '~/services/columnFilters'
 
 /**
  * Camada de persistência client-side (IndexedDB) do CSV View.
  *
- * Não há banco de servidor: os arquivos abertos e as preferências do usuário
- * vivem inteiramente no navegador. Este módulo inicializa o banco com os dois
- * object stores documentados no schema (`files` e `settings`) e o índice por
- * `last_opened_at` usado para listar os arquivos recentes.
+ * Não há banco de servidor: os arquivos abertos, as preferências do usuário e
+ * o estado de sessão do Viewer vivem inteiramente no navegador. Este módulo
+ * inicializa o banco com os três object stores (`files`, `settings` e
+ * `sessions`) e o índice por `last_opened_at` usado para listar os arquivos
+ * recentes.
  *
  * Referência: `.spec/init/database-schema.md` (US-4.1).
  */
@@ -20,13 +22,16 @@ import {
 export const DB_NAME = 'csvview'
 
 /** Versão do schema. Incrementar quando os stores/índices mudarem. */
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 
 /** Object store dos arquivos abertos/persistidos. */
 export const FILES_STORE = 'files'
 
 /** Object store das preferências chave/valor. */
 export const SETTINGS_STORE = 'settings'
+
+/** Object store do estado de sessão do Viewer, por `FileRecord.id`. */
+export const SESSIONS_STORE = 'sessions'
 
 /** Índice de `files` por `last_opened_at` (ordena os recentes). */
 export const LAST_OPENED_INDEX = 'last_opened_at'
@@ -66,6 +71,40 @@ export interface SettingRecord {
   updated_at: number
 }
 
+/** Chave de ordenação persistida (equivalente serializável de `SortKey`). */
+export interface SessionSortKey {
+  /** Índice original da coluna no cabeçalho do dataset. */
+  index: number
+  /** Direção da comparação nesta coluna. */
+  direction: 'asc' | 'desc'
+}
+
+/**
+ * Registro do store `sessions`: estado de sessão do Viewer persistido por
+ * `FileRecord.id` (chave `fileId`). Todos os índices de coluna são
+ * **originais** (não a posição renderizada), conforme `domain_rules.md`.
+ */
+export interface SessionRecord {
+  /** Chave do object store — `FileRecord.id` do arquivo associado. */
+  fileId: number
+  /** `FileRecord.column_count` no momento da gravação (detecção de RF-06). */
+  columnCount: number
+  /** Filtros de coluna ativos (`ColumnFilter[]`). */
+  filters: ColumnFilter[]
+  /** Chaves de ordenação ativas, em ordem de prioridade decrescente. */
+  sortKeys: SessionSortKey[]
+  /** Índices de coluna ocultos. */
+  hidden: number[]
+  /** Larguras de coluna, como pares `[índice, largura em pixels]`. */
+  widths: [number, number][]
+  /** Ordem de exibição das colunas não fixadas (índices originais). */
+  order: number[]
+  /** Índices de coluna fixados, na ordem de fixação. */
+  pinned: number[]
+  /** Última atualização (epoch ms). */
+  updated_at: number
+}
+
 interface CsvViewDBSchema extends DBSchema {
   files: {
     key: number
@@ -75,6 +114,10 @@ interface CsvViewDBSchema extends DBSchema {
   settings: {
     key: string
     value: SettingRecord
+  }
+  sessions: {
+    key: number
+    value: SessionRecord
   }
 }
 
@@ -86,9 +129,10 @@ export type CsvViewDatabase = IDBPDatabase<CsvViewDBSchema>
 let dbPromise: Promise<CsvViewDatabase> | null = null
 
 /**
- * Abre (e, na primeira vez, cria) o banco IndexedDB com os stores `files` e
- * `settings` e o índice de `last_opened_at`. Chamadas subsequentes reutilizam
- * a mesma conexão, então reabrir não recria nem duplica os stores.
+ * Abre (e, na primeira vez, cria) o banco IndexedDB com os stores `files`,
+ * `settings` e `sessions` e o índice de `last_opened_at`. Chamadas
+ * subsequentes reutilizam a mesma conexão, então reabrir não recria nem
+ * duplica os stores.
  */
 export function openDatabase(): Promise<CsvViewDatabase> {
   if (!dbPromise) {
@@ -103,6 +147,9 @@ export function openDatabase(): Promise<CsvViewDatabase> {
         }
         if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
           db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' })
+        }
+        if (!db.objectStoreNames.contains(SESSIONS_STORE)) {
+          db.createObjectStore(SESSIONS_STORE, { keyPath: 'fileId' })
         }
       },
     })
