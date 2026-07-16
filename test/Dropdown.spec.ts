@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { DOMWrapper } from '@vue/test-utils'
 import Dropdown from '~/components/Dropdown.vue'
@@ -132,5 +132,56 @@ describe('Dropdown', () => {
     expect(wrapper.get('.dropdown__trigger').attributes('aria-expanded')).toBe(
       'true',
     )
+  })
+
+  // Sem espaço à direita do gatilho (ex.: gatilho perto da borda direita da
+  // página), o painel deve ancorar pela direita em vez de vazar da viewport
+  // e gerar scroll horizontal indesejado.
+  it('flips the panel to the right edge when there is no room to its right', async () => {
+    const wrapper = mountDropdown()
+    const trigger = wrapper.get('.dropdown__trigger').element as HTMLElement
+    const panelEl = wrapper.get('[role="menu"]').element as HTMLElement
+
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      left: window.innerWidth - 50,
+      right: window.innerWidth,
+      top: 0,
+      bottom: 30,
+      width: 50,
+      height: 30,
+      x: window.innerWidth - 50,
+      y: 0,
+      toJSON: () => {},
+    })
+    Object.defineProperty(panelEl, 'offsetWidth', { value: 220, configurable: true })
+
+    await wrapper.get('.dropdown__trigger').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(panelEl.classList.contains('dropdown__panel--right')).toBe(true)
+  })
+
+  it('keeps the panel anchored to the left when there is enough room', async () => {
+    const wrapper = mountDropdown()
+    const trigger = wrapper.get('.dropdown__trigger').element as HTMLElement
+    const panelEl = wrapper.get('[role="menu"]').element as HTMLElement
+
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      left: 10,
+      right: 60,
+      top: 0,
+      bottom: 30,
+      width: 50,
+      height: 30,
+      x: 10,
+      y: 0,
+      toJSON: () => {},
+    })
+    Object.defineProperty(panelEl, 'offsetWidth', { value: 220, configurable: true })
+
+    await wrapper.get('.dropdown__trigger').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(panelEl.classList.contains('dropdown__panel--right')).toBe(false)
   })
 })

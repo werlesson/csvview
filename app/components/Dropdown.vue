@@ -35,6 +35,19 @@ const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
+/** Lado de ancoragem do painel: alterna para a direita quando não há espaço
+ *  à direita do gatilho, evitando que o painel vaze da viewport e gere scroll
+ *  horizontal indesejado na página (relevante perto da borda direita). */
+const align = ref<'left' | 'right'>('left')
+
+function updateAlign(): void {
+  if (!trigger.value || !panel.value) return
+  const triggerRect = trigger.value.getBoundingClientRect()
+  const panelWidth = panel.value.offsetWidth
+  const margin = 8
+  align.value =
+    triggerRect.left + panelWidth + margin > window.innerWidth ? 'right' : 'left'
+}
 
 function focusableItems(): HTMLElement[] {
   if (!panel.value) return []
@@ -50,7 +63,9 @@ async function openMenu(): Promise<void> {
   open.value = true
   emit('open')
   await nextTick()
+  updateAlign()
   focusableItems()[0]?.focus()
+  window.addEventListener('resize', updateAlign)
 }
 
 function closeMenu(returnFocus = false): void {
@@ -58,6 +73,7 @@ function closeMenu(returnFocus = false): void {
   open.value = false
   emit('close')
   if (returnFocus) trigger.value?.focus()
+  window.removeEventListener('resize', updateAlign)
 }
 
 function toggle(): void {
@@ -96,6 +112,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  window.removeEventListener('resize', updateAlign)
 })
 </script>
 
@@ -119,6 +136,7 @@ onBeforeUnmount(() => {
         v-show="open"
         ref="panel"
         class="dropdown__panel"
+        :class="{ 'dropdown__panel--right': align === 'right' }"
         role="menu"
         @keydown.esc.prevent="closeMenu(true)"
         @keydown="onPanelKeydown"
@@ -167,11 +185,21 @@ onBeforeUnmount(() => {
   left: 0;
   z-index: 30;
   min-width: 200px;
+  /* Nunca ultrapassa a viewport, mesmo se `updateAlign` não alcançar a
+     medição a tempo (ex.: primeiro paint) — trava o vazamento horizontal. */
+  max-width: min(320px, calc(100vw - 24px));
   padding: 6px;
   background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+/* Perto da borda direita da viewport (UI-XX): ancora pela direita do gatilho
+   em vez da esquerda, para o painel abrir "para dentro" da tela. */
+.dropdown__panel--right {
+  left: auto;
+  right: 0;
 }
 
 /* Transição de abrir/fechar (RF-06c, UI-02): fade + leve translateY. */
