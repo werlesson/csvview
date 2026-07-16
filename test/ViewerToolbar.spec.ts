@@ -30,13 +30,36 @@ describe('ViewerToolbar', () => {
     expect(text).toContain('1,204,882 linhas')
   })
 
-  it('apresenta os controles de busca, filtros e colunas', () => {
+  it('apresenta os controles de busca, filtros, colunas e exportar', () => {
     const wrapper = mountToolbar()
     expect(wrapper.find('input[type="search"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Filtros')
     expect(wrapper.text()).toContain('Colunas')
-    // Exportar é uma feature adiada, fora do escopo do MVP.
-    expect(wrapper.text()).not.toContain('Exportar')
+    expect(wrapper.text()).toContain('Exportar')
+  })
+
+  // UI-04: o controle "Exportar" fica em toolbar__meta, entre os controles
+  // existentes e o contador de linhas.
+  it('renderiza o botão "Exportar" entre os controles existentes e o contador de linhas', () => {
+    const wrapper = mountToolbar()
+    const meta = wrapper.find('.toolbar__meta')
+    expect(meta.find('.toolbar__export').exists()).toBe(true)
+
+    const children = meta.element.children
+    const exportIndex = [...children].findIndex((el) => el.classList.contains('toolbar__export'))
+    const countIndex = [...children].findIndex((el) => el.classList.contains('toolbar__count'))
+    expect(exportIndex).toBeGreaterThanOrEqual(0)
+    expect(countIndex).toBeGreaterThan(exportIndex)
+  })
+
+  it('emite "open-export" exatamente uma vez ao clicar em "Exportar", sem alterar outro estado', async () => {
+    const wrapper = mountToolbar()
+    await wrapper.find('.toolbar__export').trigger('click')
+
+    expect(wrapper.emitted('open-export')).toEqual([[]])
+    expect(wrapper.emitted('toggle-filters')).toBeUndefined()
+    expect(wrapper.emitted('update:search')).toBeUndefined()
+    expect(wrapper.emitted('toggle-column')).toBeUndefined()
   })
 
   // UI-02: badge de contagem no controle "Filtros".

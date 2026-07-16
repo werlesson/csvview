@@ -5,6 +5,7 @@ import ViewerTable from '~/components/ViewerTable.vue'
 import StatsPanel from '~/components/StatsPanel.vue'
 import FilterPanel from '~/components/FilterPanel.vue'
 import FilterChips from '~/components/FilterChips.vue'
+import ExportModal from '~/components/ExportModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
 
@@ -58,6 +59,7 @@ const {
   applyFilters,
   noResults,
   visibleRowCount,
+  filteredRows,
 } = useViewer(() => dataset.value)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
@@ -67,6 +69,13 @@ const showFilters = ref(false)
 
 function onToggleFilters(): void {
   showFilters.value = !showFilters.value
+}
+
+/** Visibilidade do modal de exportação (UI-04) — nenhuma persistência (RF-16). */
+const showExport = ref(false)
+
+function onOpenExport(): void {
+  showExport.value = true
 }
 
 /** Só os filtros que restringem linhas (não-inertes) acionam a mensagem/ação de "limpar filtros" no estado vazio. */
@@ -83,6 +92,7 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       @toggle-column="toggleColumn"
       @toggle-pin="togglePin"
       @toggle-filters="onToggleFilters"
+      @open-export="onOpenExport"
     />
 
     <FilterChips :columns="columns" :filters="filters" @remove="removeFilter" />
@@ -93,6 +103,15 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       :filters="filters"
       @apply="applyFilters"
       @close="showFilters = false"
+    />
+
+    <ExportModal
+      :open="showExport"
+      :filtered-rows="filteredRows"
+      :all-rows="dataset?.rows ?? []"
+      :display-columns="displayColumns"
+      :file-name="meta?.name ?? ''"
+      @close="showExport = false"
     />
 
     <div class="viewer__body">

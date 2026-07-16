@@ -12,9 +12,9 @@ import type { ViewerColumn } from '~/composables/useViewer'
  *
  * Fiel à tela de referência (Screen 2): à esquerda o campo de busca
  * "Buscar em tudo…", o controle **Filtros** (badge de contagem, UI-02) e o
- * seletor de colunas; à direita, o contador de linhas. O nome do arquivo fica
- * na barra de título (header do layout). O controle de **Exportar**
- * (feature adiada) fica **fora do escopo do MVP** e não é renderizado aqui.
+ * seletor de colunas; à direita, o controle **Exportar** (UI-04, abre o
+ * modal de exportação via `open-export`) e o contador de linhas. O nome do
+ * arquivo fica na barra de título (header do layout).
  *
  * Cada item do menu "Colunas" reusa {@link ColumnChip} (variação `pinned`) e
  * expõe um controle de fixar/desfixar equivalente ao botão de pin do
@@ -44,10 +44,15 @@ const emit = defineEmits<{
   (e: 'toggle-column', index: number): void
   (e: 'toggle-pin', index: number): void
   (e: 'toggle-filters'): void
+  (e: 'open-export'): void
 }>()
 
 function onToggleFilters(): void {
   emit('toggle-filters')
+}
+
+function onOpenExport(): void {
+  emit('open-export')
 }
 
 function onSearch(value: string): void {
@@ -186,6 +191,39 @@ function onTogglePin(index: number): void {
 
     <div class="toolbar__meta">
       <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
+      <button
+        type="button"
+        class="toolbar__export"
+        aria-label="Exportar"
+        @click="onOpenExport"
+      >
+        <svg
+          class="toolbar__icon"
+          viewBox="0 0 16 16"
+          width="15"
+          height="15"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M8 1.5 V10 M8 10 L5 7 M8 10 L11 7"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M2.5 11.5 V13.5 H13.5 V11.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>Exportar</span>
+      </button>
     </div>
   </div>
 </template>
@@ -220,6 +258,34 @@ function onTogglePin(index: number): void {
   flex: none;
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+/* Controle "Exportar" (UI-04): destaque primary (accent sólido), para se
+   diferenciar dos demais controles da toolbar como ação principal. */
+.toolbar__export {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__export:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.toolbar__export .toolbar__icon {
+  color: var(--accent-fg);
 }
 
 .toolbar__count {
