@@ -130,6 +130,49 @@ describe('ViewerTable', () => {
     expect(wrapper.find('.viewer-table__body').exists()).toBe(false)
   })
 
+  // UI-03/RF-06: sem filtros ativos, o estado vazio mantém a dica da busca e
+  // não mostra a ação de limpar filtros.
+  it('sem hasActiveFilters, mantém a dica atual da busca e não mostra "Limpar filtros"', () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: [] },
+    })
+
+    expect(wrapper.find('.viewer-table__empty-hint').text()).toBe(
+      'Nenhuma linha casa com a busca. Ajuste o termo ou limpe o campo.',
+    )
+    expect(wrapper.find('.viewer-table__empty-clear').exists()).toBe(false)
+  })
+
+  // UI-03/RF-06: com filtros ativos, a dica menciona filtros e a ação de
+  // limpar aparece, emitindo `clear-filters` ao ser acionada.
+  it('com hasActiveFilters, ajusta a dica para mencionar filtros e emite "clear-filters" ao limpar', async () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: [], hasActiveFilters: true },
+    })
+
+    expect(wrapper.find('.viewer-table__empty-hint').text()).toContain('filtros')
+    const clearButton = wrapper.find('.viewer-table__empty-clear')
+    expect(clearButton.exists()).toBe(true)
+
+    await clearButton.trigger('click')
+
+    expect(wrapper.emitted('clear-filters')).toEqual([[]])
+  })
+
+  // UI-03: o cabeçalho da tabela segue sem controles de filtro, mesmo com
+  // hasActiveFilters=true.
+  it('mantém o cabeçalho sem controles de filtro mesmo com hasActiveFilters=true', () => {
+    const wrapper = mount(ViewerTable, {
+      props: { columns: makeColumns(), rows: [], hasActiveFilters: true },
+    })
+
+    const headers = wrapper.findAll('.viewer-table__th')
+    expect(headers).toHaveLength(3)
+    for (const header of headers) {
+      expect(header.find('.viewer-table__empty-clear').exists()).toBe(false)
+    }
+  })
+
   it('mantém o corpo da tabela quando há linhas', () => {
     const wrapper = mount(ViewerTable, {
       props: { columns: makeColumns(), rows: ROWS },

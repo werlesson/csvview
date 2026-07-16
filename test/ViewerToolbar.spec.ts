@@ -30,13 +30,34 @@ describe('ViewerToolbar', () => {
     expect(text).toContain('1,204,882 linhas')
   })
 
-  it('apresenta apenas os controles do MVP (busca e colunas)', () => {
+  it('apresenta os controles de busca, filtros e colunas', () => {
     const wrapper = mountToolbar()
     expect(wrapper.find('input[type="search"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Filtros')
     expect(wrapper.text()).toContain('Colunas')
-    // Controles de features adiadas ficam fora do escopo do MVP.
-    expect(wrapper.text()).not.toContain('Filtros')
+    // Exportar é uma feature adiada, fora do escopo do MVP.
     expect(wrapper.text()).not.toContain('Exportar')
+  })
+
+  // UI-02: badge de contagem no controle "Filtros".
+  it('renderiza o badge "2" no controle Filtros quando activeFilterCount=2', () => {
+    const wrapper = mountToolbar({ activeFilterCount: 2 })
+    const filtersButton = wrapper.find('.toolbar__filters')
+    expect(filtersButton.text()).toContain('2')
+    expect(filtersButton.find('.toolbar__filters-badge').exists()).toBe(true)
+  })
+
+  it('não renderiza contagem no controle Filtros quando activeFilterCount=0', () => {
+    const wrapper = mountToolbar({ activeFilterCount: 0 })
+    const filtersButton = wrapper.find('.toolbar__filters')
+    expect(filtersButton.find('.toolbar__filters-badge').exists()).toBe(false)
+  })
+
+  it('emite "toggle-filters" ao clicar no controle Filtros', async () => {
+    const wrapper = mountToolbar()
+    await wrapper.find('.toolbar__filters').trigger('click')
+
+    expect(wrapper.emitted('toggle-filters')).toEqual([[]])
   })
 
   it('emite "update:search" ao digitar no campo de busca', async () => {

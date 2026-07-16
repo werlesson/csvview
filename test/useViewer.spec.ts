@@ -482,4 +482,158 @@ describe('useViewer', () => {
       ])
     })
   })
+
+  describe('filtros por coluna (RF-03 a RF-07, CT-02)', () => {
+    /** id (number), name (text), amount (number), status (text). */
+    function makeFilterDataset(): Dataset {
+      return {
+        header: ['id', 'name', 'amount', 'status'],
+        rows: [
+          ['1', 'Ana Pix', '150', 'ok'],
+          ['2', 'Bruno', '300', 'failed'],
+          ['3', 'Carla Pix', '50', 'failed'],
+          ['4', 'Dara', '400', 'ok'],
+          ['5', 'Eva Pix', '500', 'failed'],
+        ],
+      }
+    }
+
+    it('sem filtros, filteredRows é idêntico ao comportamento atual da busca (regressão)', () => {
+      const { search, filters, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      expect(filters.value).toEqual([])
+      expect(filteredRows.value).toHaveLength(5)
+
+      search.value = 'Pix'
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '3', '5'])
+    })
+
+    it('um filtro numérico (amount>100) reduz as linhas', () => {
+      const { filters, addFilter, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      expect(filters.value).toHaveLength(1)
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '2', '4', '5'])
+    })
+
+    it('dois filtros em colunas diferentes combinam por E (amount>100 E status=failed)', () => {
+      const { addFilter, filteredRows } = useViewer(() => makeFilterDataset())
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      addFilter({ column: 3, operator: 'igual', value: 'failed' })
+
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['2', '5'])
+    })
+
+    it('dois filtros na mesma coluna combinam por E (amount>100 E amount<500)', () => {
+      const { addFilter, filteredRows } = useViewer(() => makeFilterDataset())
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      addFilter({ column: 2, operator: 'menorQue', value: '500' })
+
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '2', '4'])
+    })
+
+    it('remover um filtro reamplia o conjunto de linhas', () => {
+      const { filters, addFilter, removeFilter, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      addFilter({ column: 3, operator: 'igual', value: 'failed' })
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['2', '5'])
+
+      removeFilter(1) // remove o filtro de status
+      expect(filters.value).toHaveLength(1)
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '2', '4', '5'])
+    })
+
+    it('busca "Pix" + filtro amount>100 é a interseção; limpar só a busca mantém o filtro e vice-versa', () => {
+      const { search, addFilter, clearSearch, clearFilters, filteredRows } =
+        useViewer(() => makeFilterDataset())
+
+      search.value = 'Pix'
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      // Interseção: "Pix" → linhas 1,3,5; amount>100 → 1,2,4,5. Interseção = 1,5.
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '5'])
+
+      clearSearch()
+      // Só o filtro permanece: amount>100 → 1,2,4,5.
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '2', '4', '5'])
+
+      search.value = 'Pix'
+      clearFilters()
+      // Só a busca permanece: "Pix" → 1,3,5.
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '3', '5'])
+    })
+
+    it('visibleRowCount acompanha a filtragem', () => {
+      const { addFilter, visibleRowCount } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      expect(visibleRowCount.value).toBe(5)
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      expect(visibleRowCount.value).toBe(4)
+    })
+
+    it('noResults é verdadeiro quando a combinação de filtros é vazia', () => {
+      const { addFilter, noResults, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      expect(noResults.value).toBe(false)
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      addFilter({ column: 2, operator: 'menorQue', value: '0' })
+      expect(filteredRows.value).toHaveLength(0)
+      expect(noResults.value).toBe(true)
+    })
+
+    it('clearFilters() com busca vazia restaura dataset.value.rows', () => {
+      const { addFilter, clearFilters, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '100' })
+      expect(filteredRows.value).toHaveLength(4)
+
+      clearFilters()
+      expect(filteredRows.value).toHaveLength(5)
+    })
+
+    it('um filtro inerte (sem valor válido) não restringe nenhuma linha', () => {
+      const { addFilter, filteredRows } = useViewer(() => makeFilterDataset())
+
+      addFilter({ column: 2, operator: 'igual' }) // sem valor → inerte
+      expect(filteredRows.value).toHaveLength(5)
+    })
+
+    it('updateFilter edita operador/valor de um filtro existente e recompõe o resultado', () => {
+      const { addFilter, updateFilter, filteredRows } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      addFilter({ column: 2, operator: 'maiorQue', value: '400' })
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['5'])
+
+      updateFilter(0, { value: '100' })
+      expect(filteredRows.value.map((r) => r[0])).toEqual(['1', '2', '4', '5'])
+    })
+
+    it('activeFilterCount reflete o nº de filtros (chips), inclusive inertes', () => {
+      const { addFilter, activeFilterCount } = useViewer(() =>
+        makeFilterDataset(),
+      )
+
+      expect(activeFilterCount.value).toBe(0)
+      addFilter({ column: 2, operator: 'igual' }) // inerte
+      addFilter({ column: 3, operator: 'igual', value: 'ok' })
+      expect(activeFilterCount.value).toBe(2)
+    })
+  })
 })
