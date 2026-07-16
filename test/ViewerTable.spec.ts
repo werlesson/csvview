@@ -757,4 +757,89 @@ describe('ViewerTable', () => {
       expect(html.indexOf('highlight-legend')).toBeLessThan(html.indexOf('viewer-table__head'))
     })
   })
+
+  // Fase 5, T09/RF-06: os quatro destaques (vazio, duplicado, negativo, data
+  // inválida) SHALL aparecer simultaneamente no primeiro render, sem nenhuma
+  // interação/clique prévio — exigência combinada que nenhuma task isolada
+  // (T03/T04/T06/T07) valida sozinha. Precisa de linhas de corpo reais (ver
+  // MEMORY viewertable-virtualizer-no-body-rows-jsdom).
+  describe('T09: integração dos quatro destaques no primeiro render, sem interação (RF-06)', () => {
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function allHighlightsColumns(): ViewerColumn[] {
+      return [
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 3, label: 'created', type: 'date', visible: true, pinned: false, width: 180 },
+      ]
+    }
+
+    /** As quatro condições numa única passada: vazio, duplicado, negativo, data inválida. */
+    const allHighlightsRows = [
+      ['1', 'Ana', '100', '2026-01-04'],
+      ['2', 'Ana', '-50', '05/13/26'],
+      ['3', '', '20', '2026-02-01'],
+    ]
+
+    const columnDuplicateCounts = [
+      new Map<string, number>(),
+      new Map<string, number>([['Ana', 2]]),
+      new Map<string, number>(),
+      new Map<string, number>(),
+    ]
+    const isRowDuplicate = (row: string[]) => row[1] === 'Ana'
+
+    it('exibe vazio, duplicado (badge + linha), negativo, data inválida e a legenda, todos no mesmo mount, sem trigger/click prévio', async () => {
+      const wrapper = mount(ViewerTable, {
+        props: {
+          columns: allHighlightsColumns(),
+          rows: allHighlightsRows,
+          columnDuplicateCounts,
+          isRowDuplicate,
+        },
+      })
+      await nextTick()
+      await nextTick()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows).toHaveLength(3)
+
+      // RF-01: célula vazia ("name" da linha 3) — rótulo "empty" + classe hachurada.
+      const emptyCell = rows[2]!.findAll('.csv-cell')[1]!
+      expect(emptyCell.classes()).toContain('csv-cell--empty')
+      expect(emptyCell.get('.csv-cell__empty-label').text()).toBe('empty')
+
+      // RF-02: células "Ana" (linhas 1 e 2) — badge "dup ×2".
+      expect(rows[0]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+      expect(rows[1]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+
+      // RF-03: linhas com valor duplicado — destaque de fundo na linha inteira.
+      expect(rows[0]!.classes()).toContain('viewer-table__row--duplicate')
+      expect(rows[1]!.classes()).toContain('viewer-table__row--duplicate')
+      expect(rows[2]!.classes()).not.toContain('viewer-table__row--duplicate')
+
+      // RF-04: célula number negativa (-50 em amount, linha 2) — classe csv-cell--negative.
+      expect(rows[1]!.findAll('.csv-cell')[2]!.classes()).toContain('csv-cell--negative')
+      expect(rows[0]!.findAll('.csv-cell')[2]!.classes()).not.toContain('csv-cell--negative')
+
+      // RF-05: célula date inválida (05/13/26, linha 2) — borda + ícone + valor bruto.
+      const invalidDateCell = rows[1]!.findAll('.csv-cell')[3]!
+      expect(invalidDateCell.classes()).toContain('csv-cell--invalid-date')
+      expect(invalidDateCell.text()).toContain('⚠ 05/13/26')
+      expect(rows[0]!.findAll('.csv-cell')[3]!.classes()).not.toContain('csv-cell--invalid-date')
+
+      // UI-01: legenda fixa com os 4 pares swatch+rótulo, presente desde o primeiro render.
+      const legendItems = wrapper.findAll('.highlight-legend__item')
+      expect(legendItems).toHaveLength(4)
+      const legendLabels = legendItems.map((item) => item.get('.highlight-legend__label').text())
+      expect(legendLabels).toEqual(['vazio', 'duplicado', 'negativo', 'data inválida'])
+    })
+  })
 })
