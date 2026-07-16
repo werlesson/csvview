@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { isEmptyCell } from '~/services/columnStats'
 
 const props = defineProps<{
   value: string | number | null | undefined
@@ -13,15 +14,33 @@ const props = defineProps<{
    * leve realce de fundo, alinhado ao destaque do cabeçalho.
    */
   selected?: boolean
+  /**
+   * Nº de ocorrências do valor desta célula na sua coluna (RF-02): `> 1`
+   * exibe o badge "dup ×N" ao lado do valor. `undefined`/`1` não exibe nada.
+   */
+  dupCount?: number
+  /**
+   * Coluna `number` com valor `< 0` (RF-04): aplica o mesmo tom de
+   * `signClass`/`is-negative` (`StatsPanel.vue:92-93`) ao texto.
+   */
+  negative?: boolean
+  /**
+   * Coluna `date` cujo valor bruto não satisfaz `isDateValue` (RF-05): borda
+   * `--warning` + ícone de alerta + prefixo "⚠ " ao valor, sem reformatar.
+   */
+  invalidDate?: boolean
 }>()
 
+const isEmpty = computed(() => isEmptyCell(props.value))
+
+const rawDisplay = computed(() => (isEmpty.value ? 'empty' : String(props.value)))
+
+/** Valor exibido, com prefixo "⚠ " para data inválida (RF-05) — valor bruto, sem reformatação. */
 const display = computed(() =>
-  props.value === null || props.value === undefined || props.value === ''
-    ? '—'
-    : String(props.value),
+  !isEmpty.value && props.invalidDate ? `⚠ ${rawDisplay.value}` : rawDisplay.value,
 )
 
-const isEmpty = computed(() => display.value === '—')
+const showDupBadge = computed(() => (props.dupCount ?? 0) > 1)
 </script>
 
 <template>
@@ -31,10 +50,16 @@ const isEmpty = computed(() => display.value === '—')
       isEmpty ? 'csv-cell--empty' : '',
       numeric ? 'csv-cell--numeric' : '',
       selected ? 'csv-cell--selected' : '',
+      negative ? 'csv-cell--negative' : '',
+      invalidDate ? 'csv-cell--invalid-date' : '',
     ]"
     :title="isEmpty ? undefined : display"
   >
-    {{ display }}
+    <span v-if="isEmpty" class="csv-cell__empty-label">{{ display }}</span>
+    <template v-else>
+      {{ display }}
+      <span v-if="showDupBadge" class="csv-cell__dup-badge">dup ×{{ dupCount }}</span>
+    </template>
   </td>
 </template>
 
@@ -60,8 +85,22 @@ const isEmpty = computed(() => display.value === '—')
   vertical-align: middle;
 }
 
-/* Célula vazia (—): tom apagado, itálico. */
+/* Célula vazia: padrão hachurado (listras diagonais) + rótulo "empty" (RF-01). */
 .csv-cell--empty {
+  position: relative;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--border) 0,
+    var(--border) 4px,
+    var(--bg-2) 4px,
+    var(--bg-2) 8px
+  );
+}
+
+.csv-cell__empty-label {
+  display: block;
+  width: 100%;
+  text-align: center;
   color: var(--text-3);
   font-style: italic;
 }
@@ -79,5 +118,31 @@ const isEmpty = computed(() => display.value === '—')
   background: var(--accent-soft);
   border-right-color: var(--accent);
   border-left: 1px solid var(--accent);
+}
+
+/* Célula numérica negativa (RF-04): mesmo tom de `signClass`/`is-negative`
+   (`StatsPanel.vue:92-93,396-398`). */
+.csv-cell--negative {
+  color: var(--error);
+}
+
+/* Célula de data inválida (RF-05): borda laranja ao redor da célula; o ícone
+   "⚠ " já vem embutido no valor exibido (ver `display`, sem reformatação). */
+.csv-cell--invalid-date {
+  box-shadow: inset 0 0 0 1px var(--warning);
+}
+
+/* Badge "dup ×N" (RF-02): ao lado do valor, cor accent (distinta de
+   `--warning`/`--error`, já usados por data inválida/negativo). */
+.csv-cell__dup-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  color: var(--accent);
+  background: var(--accent-soft);
+  vertical-align: middle;
 }
 </style>

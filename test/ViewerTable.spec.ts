@@ -603,4 +603,232 @@ describe('ViewerTable', () => {
       expect(largeCount).toBeLessThan(100)
     })
   })
+
+  // T06/RF-02,RF-04,RF-05,RNF-01: sinais de destaque por célula, fiados a partir
+  // da prop `columnDuplicateCounts`. Precisa de linhas de corpo reais (ver MEMORY
+  // viewertable-virtualizer-no-body-rows-jsdom): stub de offsetHeight + duplo nextTick.
+  describe('T06: destaques por célula e por linha', () => {
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    // T10: `created` NÃO força `type: 'date'` — num dataset real, `inferColumnType`
+    // tipa `text` assim que uma célula reprova `isDateValue` (aqui, '05/13/26').
+    // Quem decide o destaque RF-05 é `isDateLikeColumn` a partir dos valores reais
+    // da coluna (maioria > 50% válida), não `column.type`.
+    function highlightColumns(): ViewerColumn[] {
+      return [
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 3, label: 'created', type: 'text', visible: true, pinned: false, width: 180 },
+      ]
+    }
+
+    // `created`: 2 de 3 preenchidas são ISO válidas (maioria > 50%) e uma é
+    // '05/13/26' (nem ISO nem DMY de 4 dígitos) — isDateLikeColumn(created) === true,
+    // então apenas a célula '05/13/26' recebe invalidDate=true.
+    const highlightRows = [
+      ['1', 'Ana', '100', '2026-01-04'],
+      ['2', 'Ana', '-50', '05/13/26'],
+      ['3', 'Ana', '30', '2026-02-10'],
+    ]
+
+    async function mountHighlighted(extraProps: Record<string, unknown> = {}) {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: highlightColumns(), rows: highlightRows, ...extraProps },
+      })
+      await nextTick()
+      await nextTick()
+      return wrapper
+    }
+
+    it('RF-02: célula com valor duplicado na coluna recebe o dupCount correto (badge "dup ×N")', async () => {
+      const columnDuplicateCounts = [
+        new Map<string, number>(),
+        new Map<string, number>([['Ana', 3]]),
+        new Map<string, number>(),
+        new Map<string, number>(),
+      ]
+      const wrapper = await mountHighlighted({ columnDuplicateCounts })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows).toHaveLength(3)
+      for (const row of rows) {
+        const nameCell = row.findAll('.csv-cell')[1]!
+        expect(nameCell.find('.csv-cell__dup-badge').text()).toBe('dup ×3')
+      }
+      // Coluna sem contagem: nenhum badge.
+      const idCell = rows[0]!.findAll('.csv-cell')[0]!
+      expect(idCell.find('.csv-cell__dup-badge').exists()).toBe(false)
+    })
+
+    it('RF-04: célula number negativa recebe negative=true (classe csv-cell--negative); positiva não', async () => {
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const positiveAmount = rows[0]!.findAll('.csv-cell')[2]!
+      const negativeAmount = rows[1]!.findAll('.csv-cell')[2]!
+
+      expect(positiveAmount.classes()).not.toContain('csv-cell--negative')
+      expect(negativeAmount.classes()).toContain('csv-cell--negative')
+    })
+
+    it('RF-05: célula date inválida recebe invalidDate=true (classe csv-cell--invalid-date); válida não', async () => {
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const validDate = rows[0]!.findAll('.csv-cell')[3]!
+      const invalidDate = rows[1]!.findAll('.csv-cell')[3]!
+
+      expect(validDate.classes()).not.toContain('csv-cell--invalid-date')
+      expect(invalidDate.classes()).toContain('csv-cell--invalid-date')
+      expect(invalidDate.text()).toContain('⚠')
+      expect(invalidDate.text()).toContain('05/13/26')
+    })
+
+    it('RF-05: coluna cuja maioria falha isDateValue não aplica o destaque a nenhuma célula', async () => {
+      // "name" (index 1) é texto livre; 'Ana' coincidentemente não é data, mas
+      // nenhuma célula da coluna é reconhecida como data — isDateLikeColumn === false.
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      for (const row of rows) {
+        const nameCell = row.findAll('.csv-cell')[1]!
+        expect(nameCell.classes()).not.toContain('csv-cell--invalid-date')
+      }
+    })
+
+    it('RNF-01: destaques coexistem com seleção de coluna e alinhamento numérico sem removê-los', async () => {
+      const wrapper = await mountHighlighted({ selectedIndex: 2 })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const negativeAmount = rows[1]!.findAll('.csv-cell')[2]!
+
+      expect(negativeAmount.classes()).toContain('csv-cell--selected')
+      expect(negativeAmount.classes()).toContain('csv-cell--numeric')
+      expect(negativeAmount.classes()).toContain('csv-cell--negative')
+    })
+
+    it('regressão de virtualização: os novos props não aumentam a contagem de <tr> de corpo', async () => {
+      const bigRows = Array.from({ length: 50_000 }, (_, i) => [
+        String(i),
+        i % 2 === 0 ? 'dup' : `unique${i}`,
+        String(i - 25_000),
+        '2026-01-01',
+      ])
+      const columnDuplicateCounts = [
+        new Map<string, number>(),
+        new Map<string, number>([['dup', 25_000]]),
+        new Map<string, number>(),
+        new Map<string, number>(),
+      ]
+
+      const wrapper = await mountHighlighted({
+        rows: bigRows,
+        columnDuplicateCounts,
+      })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows.length).toBeGreaterThan(0)
+      expect(rows.length).toBeLessThan(100)
+    })
+  })
+
+  describe('T07: legenda fixa acima do cabeçalho (UI-01)', () => {
+    it('renderiza a HighlightLegend dentro de .viewer-table, antes do <thead>, com os 4 pares swatch+rótulo', () => {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: makeColumns(), rows: ROWS },
+      })
+
+      const table = wrapper.get('.viewer-table')
+      const legend = table.find('.highlight-legend')
+      expect(legend.exists()).toBe(true)
+      expect(legend.findAll('.highlight-legend__item')).toHaveLength(4)
+
+      const html = table.html()
+      expect(html.indexOf('highlight-legend')).toBeLessThan(html.indexOf('viewer-table__head'))
+    })
+  })
+
+  // Fase 5, T09/RF-06: os quatro destaques (vazio, duplicado, negativo, data
+  // inválida) SHALL aparecer simultaneamente no primeiro render, sem nenhuma
+  // interação/clique prévio — exigência combinada que nenhuma task isolada
+  // (T03/T04/T06/T07) valida sozinha. Precisa de linhas de corpo reais (ver
+  // MEMORY viewertable-virtualizer-no-body-rows-jsdom).
+  describe('T09: integração dos quatro destaques no primeiro render, sem interação (RF-06)', () => {
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function allHighlightsColumns(): ViewerColumn[] {
+      return [
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 3, label: 'created', type: 'date', visible: true, pinned: false, width: 180 },
+      ]
+    }
+
+    /** As quatro condições numa única passada: vazio, duplicado, negativo, data inválida. */
+    const allHighlightsRows = [
+      ['1', 'Ana', '100', '2026-01-04'],
+      ['2', 'Ana', '-50', '05/13/26'],
+      ['3', '', '20', '2026-02-01'],
+    ]
+
+    const columnDuplicateCounts = [
+      new Map<string, number>(),
+      new Map<string, number>([['Ana', 2]]),
+      new Map<string, number>(),
+      new Map<string, number>(),
+    ]
+    it('exibe vazio, duplicado (badge), negativo, data inválida e a legenda, todos no mesmo mount, sem trigger/click prévio', async () => {
+      const wrapper = mount(ViewerTable, {
+        props: {
+          columns: allHighlightsColumns(),
+          rows: allHighlightsRows,
+          columnDuplicateCounts,
+        },
+      })
+      await nextTick()
+      await nextTick()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows).toHaveLength(3)
+
+      // RF-01: célula vazia ("name" da linha 3) — rótulo "empty" + classe hachurada.
+      const emptyCell = rows[2]!.findAll('.csv-cell')[1]!
+      expect(emptyCell.classes()).toContain('csv-cell--empty')
+      expect(emptyCell.get('.csv-cell__empty-label').text()).toBe('empty')
+
+      // RF-02: células "Ana" (linhas 1 e 2) — badge "dup ×2".
+      expect(rows[0]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+      expect(rows[1]!.findAll('.csv-cell')[1]!.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+
+      // RF-04: célula number negativa (-50 em amount, linha 2) — classe csv-cell--negative.
+      expect(rows[1]!.findAll('.csv-cell')[2]!.classes()).toContain('csv-cell--negative')
+      expect(rows[0]!.findAll('.csv-cell')[2]!.classes()).not.toContain('csv-cell--negative')
+
+      // RF-05: célula date inválida (05/13/26, linha 2) — borda + ícone + valor bruto.
+      const invalidDateCell = rows[1]!.findAll('.csv-cell')[3]!
+      expect(invalidDateCell.classes()).toContain('csv-cell--invalid-date')
+      expect(invalidDateCell.text()).toContain('⚠ 05/13/26')
+      expect(rows[0]!.findAll('.csv-cell')[3]!.classes()).not.toContain('csv-cell--invalid-date')
+
+      // UI-01: legenda fixa com os 4 pares swatch+rótulo, presente desde o primeiro render.
+      const legendItems = wrapper.findAll('.highlight-legend__item')
+      expect(legendItems).toHaveLength(4)
+      const legendLabels = legendItems.map((item) => item.get('.highlight-legend__label').text())
+      expect(legendLabels).toEqual(['vazio', 'duplicado', 'negativo', 'data inválida'])
+    })
+  })
 })

@@ -190,7 +190,6 @@ function onTogglePin(index: number): void {
     </div>
 
     <div class="toolbar__meta">
-      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
       <button
         type="button"
         class="toolbar__export"
@@ -224,6 +223,7 @@ function onTogglePin(index: number): void {
         </svg>
         <span>Exportar</span>
       </button>
+      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
     </div>
   </div>
 </template>

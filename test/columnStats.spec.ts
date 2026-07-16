@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildHistogram,
+  computeColumnDuplicateCounts,
   computeColumnStats,
   computeDatasetStats,
   histogramBinCount,
   inferColumnType,
   isBooleanValue,
+  isDateLikeColumn,
   isEmailValue,
   isUrlValue,
   makeComparator,
@@ -402,6 +404,57 @@ describe('inferência de tipo e estatísticas de coluna', () => {
       const [, b] = computeDatasetStats(dataset)
       expect(b?.nulls).toBe(1)
       expect(b?.filled).toBe(1)
+    })
+  })
+
+  describe('duplicate-counts', () => {
+    it('mapeia cada valor preenchido para o nº de ocorrências na coluna', () => {
+      const counts = computeColumnDuplicateCounts(['A', 'B', 'A', 'A'])
+
+      expect(counts.get('A')).toBe(3)
+      expect(counts.get('B')).toBe(1)
+      expect(counts.size).toBe(2)
+    })
+
+    it('ignora células vazias (null/undefined/string em branco) na contagem', () => {
+      const counts = computeColumnDuplicateCounts([
+        'A',
+        null,
+        undefined,
+        '',
+        '   ',
+        'A',
+      ])
+
+      expect(counts.get('A')).toBe(2)
+      expect(counts.size).toBe(1)
+    })
+  })
+
+  describe('isDateLikeColumn', () => {
+    it('maioria (> 50%) das células preenchidas válida → true', () => {
+      // 2 de 3 preenchidas válidas (ISO); '05/13/26' não é ISO nem DMY (ano com 2 dígitos).
+      expect(
+        isDateLikeColumn(['2026-01-04', '2026-01-05', '05/13/26']),
+      ).toBe(true)
+    })
+
+    it('maioria das células preenchidas inválida (≤ 50%) → false', () => {
+      // 1 de 3 preenchidas válida.
+      expect(
+        isDateLikeColumn(['05/13/26', '05/14/26', '2026-01-04']),
+      ).toBe(false)
+    })
+
+    it('só células vazias → false (sem preenchidas, não há maioria)', () => {
+      expect(isDateLikeColumn(['', null, undefined])).toBe(false)
+    })
+
+    it('executa em uma única passagem O(N), mesmo para datasets grandes', () => {
+      const values = Array.from({ length: 20_000 }, (_, i) =>
+        i % 3 === 0 ? '05/13/26' : `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      )
+      expect(isDateLikeColumn(values)).toBe(true)
     })
   })
 })

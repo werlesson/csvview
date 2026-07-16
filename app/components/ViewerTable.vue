@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
+import HighlightLegend from '~/components/HighlightLegend.vue'
+import { isDateLikeColumn, isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
 /**
@@ -62,6 +64,8 @@ const props = withDefaults(
     hasActiveFilters?: boolean
     /** Estado vazio calculado por `useViewer` (RF-06); quando omitido, cai para `rows.length === 0`. */
     noResults?: boolean
+    /** Mapa valor→ocorrências por coluna (índice original), sobre o dataset completo (RF-02). */
+    columnDuplicateCounts?: Map<string, number>[]
   }>(),
   { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false, noResults: undefined },
 )
@@ -296,6 +300,17 @@ function dropIndicatorFor(pos: number): 'before' | 'after' | null {
 
 const scroller = ref<HTMLElement | null>(null)
 
+/**
+ * Legenda fixa (T07, UI-01): `<thead>` ajusta seu `top` sticky para a altura
+ * medida da legenda, evitando sobreposição entre as duas faixas sticky.
+ */
+const legend = ref<{ $el: HTMLElement } | null>(null)
+const legendHeight = ref(0)
+
+onMounted(() => {
+  legendHeight.value = legend.value?.$el?.offsetHeight ?? 0
+})
+
 const rowVirtualizer = useVirtualizer(
   computed(() => ({
     count: props.rows.length,
@@ -312,6 +327,41 @@ const totalSize = computed(() => rowVirtualizer.value.getTotalSize())
 
 /** Sem nenhuma linha para exibir (busca sem resultados ou dataset vazio). */
 const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
+
+/** Nº de ocorrências do valor desta célula na sua coluna (RF-02), ou `undefined` sem o mapa. */
+function dupCountFor(column: ViewerColumn, value: string | undefined): number | undefined {
+  return props.columnDuplicateCounts?.[column.index]?.get(String(value ?? '').trim())
+}
+
+/** Coluna `number` com valor preenchido `< 0` (RF-04). */
+function negativeFor(column: ViewerColumn, value: string | undefined): boolean {
+  if (column.type !== 'number') return false
+  const parsed = parseNumber(value)
+  return parsed !== null && parsed < 0
+}
+
+/**
+ * Coluna "parece data" (`isDateLikeColumn`, RF-05 v1.2), pré-calculada uma vez
+ * por coluna a partir das linhas recebidas — não recomputada por célula
+ * renderizada. Substitui o gate `column.type === 'date'`, inatingível com
+ * dados reais: `inferColumnType` só tipa `date` quando 100% das células
+ * preenchidas são válidas, o que impede a própria célula inválida que RF-05
+ * precisa detectar de existir numa coluna `date` (ver `SPEC.md` § Amendments
+ * v1.2).
+ */
+const dateLikeColumns = computed<Map<number, boolean>>(() => {
+  const result = new Map<number, boolean>()
+  for (const column of props.columns) {
+    const values = props.rows.map((row) => row[column.index])
+    result.set(column.index, isDateLikeColumn(values))
+  }
+  return result
+})
+
+/** Coluna "parece data" (`isDateLikeColumn`) cujo valor preenchido não satisfaz `isDateValue` (RF-05). */
+function invalidDateFor(column: ViewerColumn, value: string | undefined): boolean {
+  return (dateLikeColumns.value.get(column.index) ?? false) && !isEmptyCell(value) && !isDateValue(value)
+}
 </script>
 
 <template>
@@ -325,8 +375,10 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
     role="region"
     aria-label="Tabela de dados"
   >
+    <HighlightLegend ref="legend" class="viewer-table__legend" />
+
     <table class="viewer-table__grid">
-      <thead class="viewer-table__head">
+      <thead class="viewer-table__head" :style="{ top: `${legendHeight}px` }">
         <tr class="viewer-table__row" :style="{ width: gridWidth }">
           <th
             v-for="(column, pos) in columns"
@@ -442,6 +494,9 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
             :value="rows[virtualRow.index]?.[column.index]"
             :numeric="column.type === 'number'"
             :selected="column.index === selectedIndex"
+            :dup-count="dupCountFor(column, rows[virtualRow.index]?.[column.index])"
+            :negative="negativeFor(column, rows[virtualRow.index]?.[column.index])"
+            :invalid-date="invalidDateFor(column, rows[virtualRow.index]?.[column.index])"
           />
         </tr>
       </tbody>
@@ -478,6 +533,22 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
   height: 100%;
   overflow: auto;
   background: var(--bg-1);
+}
+
+/* Legenda fixa (T07, UI-01): mesma técnica de sticky do cabeçalho
+   (`.viewer-table__head`), permanecendo visível acima dele durante o scroll
+   vertical — `z-index` maior para ficar por cima do cabeçalho quando ambos
+   colidem no topo do scroller. `left: 0` (além de `top: 0`) é necessário
+   porque a legenda é irmã da `<table>` larga dentro do MESMO scroller
+   (`.viewer-table`, `overflow: auto` nos dois eixos): sem `left`, o sticky só
+   vale no eixo vertical e a legenda rola para fora de vista no scroll
+   horizontal (achado em uso real) — `left: 0` prende também a borda esquerda
+   da legenda à borda visível do scroller, como um canto sticky. */
+.viewer-table__legend {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
 }
 
 .viewer-table__grid {

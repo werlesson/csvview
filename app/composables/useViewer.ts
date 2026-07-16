@@ -2,6 +2,7 @@ import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import type { Dataset } from '~/composables/useCurrentDataset'
 import {
   columnValues,
+  computeColumnDuplicateCounts,
   computeColumnStats,
   inferColumnType,
   makeComparator,
@@ -141,6 +142,18 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   const columnStats = computed<ColumnStats[]>(() =>
     dataset.value.header.map((_, index) =>
       computeColumnStats(columnValues(dataset.value.rows, index)),
+    ),
+  )
+
+  /**
+   * Contagem de ocorrências por valor, por coluna (RF-02), sempre sobre o
+   * dataset completo — igual a `columnStats`, independe de `filteredRows`/
+   * `sortedRows` e de colunas ocultas (RF-02 AC: "dup ×3" não vira "dup ×2"
+   * com um filtro ativo).
+   */
+  const columnDuplicateCounts = computed<Map<string, number>[]>(() =>
+    dataset.value.header.map((_, index) =>
+      computeColumnDuplicateCounts(columnValues(dataset.value.rows, index)),
     ),
   )
 
@@ -490,6 +503,7 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
     visibleColumns,
     columnTypes,
     columnStats,
+    columnDuplicateCounts,
     filteredRows,
     filters,
     activeFilters,

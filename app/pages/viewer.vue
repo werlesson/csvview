@@ -60,6 +60,7 @@ const {
   noResults,
   visibleRowCount,
   filteredRows,
+  columnDuplicateCounts,
 } = useViewer(() => dataset.value)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
@@ -122,6 +123,7 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
         :sort-keys="sortKeys"
         :has-active-filters="hasActiveFilters"
         :no-results="noResults"
+        :column-duplicate-counts="columnDuplicateCounts"
         @select-column="selectColumn"
         @sort="sortColumn"
         @sort-additive="sortColumnAdditive"

@@ -153,6 +153,28 @@ export function isDateValue(value: Cell): boolean {
 }
 
 /**
+ * Predicado usado somente pelo destaque de data inválida (RF-05, v1.2): uma
+ * coluna "parece data" quando há ao menos uma célula preenchida E mais da
+ * metade (`> 0.5`) das células preenchidas satisfaz `isDateValue`. Distinto de
+ * `inferColumnType`, que exige 100% das células — exigência que torna RF-05
+ * inatingível com dados reais, pois a própria célula inválida que o destaque
+ * precisa apontar impede a coluna de ser tipada `date` (ver `SPEC.md` §
+ * Amendments v1.2). NÃO altera `ColumnType`/`inferColumnType`, usados por
+ * ordenação, `StatsPanel` e filtros, fora do escopo deste predicado. Uma única
+ * passagem O(N), sem comparação par a par.
+ */
+export function isDateLikeColumn(values: readonly Cell[]): boolean {
+  let filled = 0
+  let dates = 0
+  for (const value of values) {
+    if (isEmptyCell(value)) continue
+    filled += 1
+    if (isDateValue(value)) dates += 1
+  }
+  return filled > 0 && dates / filled > 0.5
+}
+
+/**
  * Converte uma célula-data em um valor numérico comparável (timestamp UTC em
  * milissegundos), ou `null` para célula vazia ou não reconhecida como data.
  *
@@ -454,6 +476,26 @@ export function computeColumnStats(values: readonly Cell[]): ColumnStats {
   }
 
   return stats
+}
+
+/**
+ * Mapeia, para uma coluna, cada valor preenchido (após `trim`) → nº de
+ * ocorrências entre as células preenchidas. Uma única passagem O(N), pulando
+ * células vazias (`isEmptyCell`, mesma convenção de `computeColumnStats`) —
+ * sem comparação par a par (RNF-02). Distinto do agregado
+ * `ColumnStats.duplicates` (`filled - unique`): aqui é possível saber o N
+ * específico de cada valor, necessário para o badge "dup ×N" (RF-02).
+ */
+export function computeColumnDuplicateCounts(
+  values: readonly Cell[],
+): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const value of values) {
+    if (isEmptyCell(value)) continue
+    const key = String(value).trim()
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
 }
 
 /** Dataset mínimo necessário para o cálculo por coluna. */
