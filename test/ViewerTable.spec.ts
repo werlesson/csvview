@@ -603,4 +603,142 @@ describe('ViewerTable', () => {
       expect(largeCount).toBeLessThan(100)
     })
   })
+
+  // T06/RF-02,RF-03,RF-04,RF-05,RNF-01: sinais de destaque por célula e destaque
+  // de linha duplicada, fiados a partir das props `columnDuplicateCounts`/
+  // `isRowDuplicate`. Precisa de linhas de corpo reais (ver MEMORY
+  // viewertable-virtualizer-no-body-rows-jsdom): stub de offsetHeight + duplo nextTick.
+  describe('T06: destaques por célula e por linha', () => {
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    function highlightColumns(): ViewerColumn[] {
+      return [
+        { index: 0, label: 'id', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 1, label: 'name', type: 'text', visible: true, pinned: false, width: 180 },
+        { index: 2, label: 'amount', type: 'number', visible: true, pinned: false, width: 180 },
+        { index: 3, label: 'created', type: 'date', visible: true, pinned: false, width: 180 },
+      ]
+    }
+
+    const highlightRows = [
+      ['1', 'Ana', '100', '2026-01-04'],
+      ['2', 'Ana', '-50', '05/13/26'],
+    ]
+
+    async function mountHighlighted(extraProps: Record<string, unknown> = {}) {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: highlightColumns(), rows: highlightRows, ...extraProps },
+      })
+      await nextTick()
+      await nextTick()
+      return wrapper
+    }
+
+    it('RF-02: célula com valor duplicado na coluna recebe o dupCount correto (badge "dup ×N")', async () => {
+      const columnDuplicateCounts = [
+        new Map<string, number>(),
+        new Map<string, number>([['Ana', 2]]),
+        new Map<string, number>(),
+        new Map<string, number>(),
+      ]
+      const wrapper = await mountHighlighted({ columnDuplicateCounts })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows).toHaveLength(2)
+      for (const row of rows) {
+        const nameCell = row.findAll('.csv-cell')[1]!
+        expect(nameCell.find('.csv-cell__dup-badge').text()).toBe('dup ×2')
+      }
+      // Coluna sem contagem: nenhum badge.
+      const idCell = rows[0]!.findAll('.csv-cell')[0]!
+      expect(idCell.find('.csv-cell__dup-badge').exists()).toBe(false)
+    })
+
+    it('RF-03: linha cujo isRowDuplicate retorna true recebe a classe viewer-table__row--duplicate', async () => {
+      const isRowDuplicate = (row: string[]) => row[1] === 'Ana'
+      const wrapper = await mountHighlighted({ isRowDuplicate })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows).toHaveLength(2)
+      for (const row of rows) {
+        expect(row.classes()).toContain('viewer-table__row--duplicate')
+      }
+    })
+
+    it('RF-03: sem isRowDuplicate, nenhuma linha recebe a classe de destaque de duplicado', async () => {
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      for (const row of rows) {
+        expect(row.classes()).not.toContain('viewer-table__row--duplicate')
+      }
+    })
+
+    it('RF-04: célula number negativa recebe negative=true (classe csv-cell--negative); positiva não', async () => {
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const positiveAmount = rows[0]!.findAll('.csv-cell')[2]!
+      const negativeAmount = rows[1]!.findAll('.csv-cell')[2]!
+
+      expect(positiveAmount.classes()).not.toContain('csv-cell--negative')
+      expect(negativeAmount.classes()).toContain('csv-cell--negative')
+    })
+
+    it('RF-05: célula date inválida recebe invalidDate=true (classe csv-cell--invalid-date); válida não', async () => {
+      const wrapper = await mountHighlighted()
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const validDate = rows[0]!.findAll('.csv-cell')[3]!
+      const invalidDate = rows[1]!.findAll('.csv-cell')[3]!
+
+      expect(validDate.classes()).not.toContain('csv-cell--invalid-date')
+      expect(invalidDate.classes()).toContain('csv-cell--invalid-date')
+      expect(invalidDate.text()).toContain('⚠')
+      expect(invalidDate.text()).toContain('05/13/26')
+    })
+
+    it('RNF-01: destaques coexistem com seleção de coluna e alinhamento numérico sem removê-los', async () => {
+      const wrapper = await mountHighlighted({ selectedIndex: 2 })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const negativeAmount = rows[1]!.findAll('.csv-cell')[2]!
+
+      expect(negativeAmount.classes()).toContain('csv-cell--selected')
+      expect(negativeAmount.classes()).toContain('csv-cell--numeric')
+      expect(negativeAmount.classes()).toContain('csv-cell--negative')
+    })
+
+    it('regressão de virtualização: os novos props não aumentam a contagem de <tr> de corpo', async () => {
+      const bigRows = Array.from({ length: 50_000 }, (_, i) => [
+        String(i),
+        i % 2 === 0 ? 'dup' : `unique${i}`,
+        String(i - 25_000),
+        '2026-01-01',
+      ])
+      const columnDuplicateCounts = [
+        new Map<string, number>(),
+        new Map<string, number>([['dup', 25_000]]),
+        new Map<string, number>(),
+        new Map<string, number>(),
+      ]
+      const isRowDuplicate = (row: string[]) => row[1] === 'dup'
+
+      const wrapper = await mountHighlighted({
+        rows: bigRows,
+        columnDuplicateCounts,
+        isRowDuplicate,
+      })
+
+      const rows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      expect(rows.length).toBeGreaterThan(0)
+      expect(rows.length).toBeLessThan(100)
+    })
+  })
 })

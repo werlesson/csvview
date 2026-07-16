@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
+import { isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
 /**
@@ -62,6 +63,10 @@ const props = withDefaults(
     hasActiveFilters?: boolean
     /** Estado vazio calculado por `useViewer` (RF-06); quando omitido, cai para `rows.length === 0`. */
     noResults?: boolean
+    /** Mapa valor→ocorrências por coluna (índice original), sobre o dataset completo (RF-02). */
+    columnDuplicateCounts?: Map<string, number>[]
+    /** Verifica se a linha completa contém ao menos uma célula duplicada (RF-03). */
+    isRowDuplicate?: (row: string[]) => boolean
   }>(),
   { selectedIndex: null, sortKeys: () => [], hasActiveFilters: false, noResults: undefined },
 )
@@ -312,6 +317,23 @@ const totalSize = computed(() => rowVirtualizer.value.getTotalSize())
 
 /** Sem nenhuma linha para exibir (busca sem resultados ou dataset vazio). */
 const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
+
+/** Nº de ocorrências do valor desta célula na sua coluna (RF-02), ou `undefined` sem o mapa. */
+function dupCountFor(column: ViewerColumn, value: string | undefined): number | undefined {
+  return props.columnDuplicateCounts?.[column.index]?.get(String(value ?? '').trim())
+}
+
+/** Coluna `number` com valor preenchido `< 0` (RF-04). */
+function negativeFor(column: ViewerColumn, value: string | undefined): boolean {
+  if (column.type !== 'number') return false
+  const parsed = parseNumber(value)
+  return parsed !== null && parsed < 0
+}
+
+/** Coluna `date` cujo valor preenchido não satisfaz `isDateValue` (RF-05). */
+function invalidDateFor(column: ViewerColumn, value: string | undefined): boolean {
+  return column.type === 'date' && !isEmptyCell(value) && !isDateValue(value)
+}
 </script>
 
 <template>
@@ -433,6 +455,7 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
           v-for="virtualRow in virtualRows"
           :key="virtualRow.key"
           class="viewer-table__row"
+          :class="{ 'viewer-table__row--duplicate': isRowDuplicate?.(rows[virtualRow.index]!) }"
           :style="{ width: gridWidth, transform: `translateY(${virtualRow.start}px)` }"
         >
           <CsvCell
@@ -442,6 +465,9 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
             :value="rows[virtualRow.index]?.[column.index]"
             :numeric="column.type === 'number'"
             :selected="column.index === selectedIndex"
+            :dup-count="dupCountFor(column, rows[virtualRow.index]?.[column.index])"
+            :negative="negativeFor(column, rows[virtualRow.index]?.[column.index])"
+            :invalid-date="invalidDateFor(column, rows[virtualRow.index]?.[column.index])"
           />
         </tr>
       </tbody>
@@ -674,6 +700,16 @@ const isEmpty = computed(() => props.noResults ?? props.rows.length === 0)
 /* Hover de linha: realça a linha inteira sob o cursor (fiel ao design). */
 .viewer-table__body .viewer-table__row:hover :deep(.csv-cell) {
   background: var(--bg-hover);
+}
+
+/* Linha com ao menos uma célula duplicada (RF-03): fundo distinguível na
+   própria `<tr>`, atrás das células (que por padrão são transparentes) —
+   aditivo ao hover, que colore as células (`:deep(.csv-cell)`, acima) num
+   elemento diferente, então os dois efeitos compõem em vez de se
+   substituírem (RNF-01). Tom `--warning-soft` para não se confundir com o
+   accent-soft já usado por `csv-cell--selected`/badge de duplicado. */
+.viewer-table__row--duplicate {
+  background-color: var(--warning-soft);
 }
 
 .viewer-table__th-button {
