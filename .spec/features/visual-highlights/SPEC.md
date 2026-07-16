@@ -4,7 +4,7 @@
 - Source: developer description via /plan
 - Service: csvview (única app, SPA client-side)
 - Tier: standard
-- Version: 1.2
+- Version: 1.3
 - Architecture references: `AGENTS.md`, `docs/agents/architecture.md`, `docs/agents/domain_rules.md`
 
 ## Context
@@ -59,25 +59,28 @@ flowchart LR
   ViewerTable -->|"value, numeric, selected,<br/>NEW: highlight flags"| CsvCell["CsvCell.vue (alterado)"]
   CsvCell -->|"vazio: hachurado + rótulo 'empty'"| RF01["RF-01"]
   CsvCell -->|"duplicado: badge dup xN"| RF02["RF-02"]
-  ViewerTable -->|"duplicado: destaque na linha"| RF03["RF-03"]
   CsvCell -->|"negativo: texto vermelho"| RF04["RF-04"]
   CsvCell -->|"data inválida: borda + ícone + valor bruto"| RF05["RF-05"]
 ```
 
-Legenda: `NEW_DupHelper` (RF-02) é o novo helper puro em `columnStats.ts` que resolve a
-contagem por valor; `ViewerTable`/`CsvCell` (alterados) passam a receber os sinais de destaque
-já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-04, RF-05);
-`NEW_Legend` (UI-01) é o componente novo da legenda fixa no topo da tabela.
+Legenda (revisada em v1.3 — RF-03, destaque de linha inteira, foi removido; ver Amendments):
+`NEW_DupHelper` (RF-02) é o novo helper puro em `columnStats.ts` que resolve a contagem por valor;
+`ViewerTable`/`CsvCell` (alterados) passam a receber os sinais de destaque já calculados e aplicam
+os quatro tratamentos visuais de célula (RF-01, RF-02, RF-04, RF-05); `NEW_Legend` (UI-01) é o
+componente novo da legenda fixa no topo da tabela.
 
 ## Scope
-- **In**: destaque automático de célula vazia, duplicada (badge + realce de linha), negativa e
+- **In**: destaque automático de célula vazia, duplicada (badge "dup ×N" por célula), negativa e
   data inválida; legenda fixa no topo da tabela com os 4 tipos; convivência com seleção de
   coluna, alinhamento numérico e fixação (pin) de colunas existentes.
 - **Out**: toggle configurável para ligar/desligar um tipo de destaque individualmente (decisão
   do developer — destaques são sempre ligados nesta fase, sem controle de UI para isso); o 5º
   item do backlog de destaques "valores inconsistentes" (não aparece na referência visual, sem
   critério definido — não assumir definição); qualquer alteração na feature `filters` (sem
-  dependência).
+  dependência); destaque de fundo na linha inteira por conter alguma célula duplicada — **RF-03,
+  removido em v1.3** (ver Amendments): em datasets reais, quase toda linha tende a ter algum valor
+  repetido em alguma coluna, tingindo a tabela quase inteira e perdendo o sinal (achado em
+  verificação manual pelo developer).
 
 ## RIGID (Non-Negotiable)
 
@@ -108,14 +111,11 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
     célula continua visível ao lado do badge. Com um filtro/busca ativo que oculte uma das
     células "A", as duas células "A" ainda visíveis continuam exibindo "dup ×3" (não "dup ×2").
 
-- RF-03 [State-Driven]: ENQUANTO uma linha contém ao menos uma célula cujo valor está duplicado
-  em sua coluna (conforme RF-02, contagem sobre o dataset completo, não sobre linhas
-  filtradas/exibidas), a `ViewerTable` SHALL aplicar um destaque de fundo distinguível à linha
-  inteira (cor de fundo diferente da linha padrão e do estado de hover
-  `.viewer-table__body .viewer-table__row:hover`, `app/components/ViewerTable.vue:675-677`).
-  - AC: uma linha com pelo menos uma célula duplicada tem `background-color` computado diferente
-    do padrão e do hover; uma linha sem nenhuma célula duplicada mantém o fundo padrão; o destaque
-    de linha persiste mesmo quando um filtro/busca ativo reduz o conjunto de linhas visíveis.
+- ~~RF-03 [State-Driven]: ENQUANTO uma linha contém ao menos uma célula cujo valor está duplicado
+  em sua coluna...~~ **REMOVIDO em v1.3 — ver Amendments.** O destaque de fundo na linha inteira foi
+  revogado a pedido do developer após uso real: em datasets onde múltiplas colunas têm valores
+  repetidos, a maioria das linhas acaba tingida, esvaziando o sinal do destaque (RF-02, o badge
+  "dup ×N" por célula, permanece — é suficiente para apontar duplicidade).
 
 - RF-04 [Conditional]: SE uma coluna tem tipo inferido `number` (`ColumnType`,
   `app/services/columnStats.ts:22`) E o valor numérico de uma célula preenchida é `< 0`, ENTÃO a
@@ -142,9 +142,10 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
     células preenchidas NÃO é reconhecida como data (`isDateLikeColumn` retorna `false`) não aplica
     este destaque a nenhuma célula, mesmo que `ColumnType` dessa coluna seja `text`.
 
-- RF-06 [Ubiquitous]: A `ViewerTable` SHALL aplicar os quatro destaques (RF-01 a RF-05)
-  automaticamente a toda célula/linha renderizada, sem exigir nenhuma ação do usuário e sem
-  nenhum controle de UI para ligar/desligar um tipo individualmente nesta fase (ver Scope Out).
+- RF-06 [Ubiquitous]: A `ViewerTable` SHALL aplicar os quatro destaques (RF-01, RF-02, RF-04, RF-05
+  — RF-03 removido em v1.3, ver Amendments) automaticamente a toda célula renderizada, sem exigir
+  nenhuma ação do usuário e sem nenhum controle de UI para ligar/desligar um tipo individualmente
+  nesta fase (ver Scope Out).
   - AC: ao carregar o Viewer com um dataset contendo as quatro condições, todos os destaques
     aplicáveis aparecem no primeiro render, sem clique ou interação prévia.
 
@@ -196,15 +197,15 @@ já calculados e aplicam os quatro tratamentos visuais (RF-01, RF-02, RF-03, RF-
   → `--warning`.
 - Novo componente `HighlightLegend.vue` em `app/components/`, renderizado por `ViewerTable.vue`
   acima do `<thead>` (sticky, mesma técnica de `viewer-table__head`).
-- Destaque de linha duplicada (RF-03) como classe adicional na `<tr>` do corpo, não como
-  substituição do hover existente (`.viewer-table__body .viewer-table__row:hover`).
+- ~~Destaque de linha duplicada (RF-03) como classe adicional na `<tr>`...~~ removido em v1.3 (ver
+  Amendments).
 
 ## Acceptance Criteria Summary
 | ID | Criterion | Testable? |
 |----|-----------|-----------|
 | RF-01 | Célula vazia exibe padrão hachurado + rótulo "empty" centralizado | Sim |
 | RF-02 | Célula com valor duplicado na coluna exibe badge "dup ×N" com N correto | Sim |
-| RF-03 | Linha com célula duplicada recebe destaque de fundo distinguível na linha inteira | Sim |
+| ~~RF-03~~ | ~~Linha com célula duplicada recebe destaque de fundo distinguível na linha inteira~~ | Removido (v1.3) |
 | RF-04 | Célula numérica negativa exibe texto na cor `--error` | Sim |
 | RF-05 | Célula de data inválida (coluna `isDateLikeColumn`) exibe borda laranja + ícone + valor bruto prefixado | Sim |
 | RF-06 | Todos os destaques aplicáveis aparecem no primeiro render, sem interação do usuário | Sim |
@@ -238,3 +239,20 @@ pelo destaque RF-05, substitui o gate `column.type === 'date'`. `ColumnType`/`in
 permanecem inalterados — usados por ordenação, `StatsPanel` e filtros futuros, fora do escopo desta
 feature. Ver RF-05 (revisado acima) para a definição do predicado. Task de implementação: T10
 (`PLAN.md`), Fase 6 (`PHASES.md`).
+
+### v1.3 — cor errada no destaque de linha (fix pontual) + remoção de RF-03 (decisão do developer)
+Verificação manual pelo developer, com um CSV real (767 linhas), encontrou duas questões:
+
+1. **Cor errada (corrigido diretamente, sem nova fase):** `ViewerTable.vue` aplicava
+   `background-color: var(--warning-soft)` ao destaque de linha duplicada (RF-03) — a mesma cor
+   reservada para "data inválida" (RF-05), causando confusão visual real ("por que estão
+   laranjas?"). A própria legenda (`HighlightLegend.vue`) já usa `--accent`/`--accent-soft` para o
+   swatch "duplicado", e o FLEXIBLE original desta SPEC já recomendava essa família de cor.
+   Corrigido para `--accent-soft` (commit `9983e0a`).
+2. **RF-03 removido (decisão de produto do developer):** mesmo com a cor corrigida, o destaque de
+   linha inteira mostrou-se ruidoso em dados reais — a maioria das linhas de um dataset com várias
+   colunas tende a ter *algum* valor repetido em *alguma* coluna, tingindo quase a tabela inteira e
+   esvaziando o sinal. O developer decidiu remover o destaque de linha (RF-03) e manter apenas o
+   badge "dup ×N" por célula (RF-02), que já é suficiente para apontar duplicidade sem ruído
+   visual. Ver RF-03 (marcado como removido acima), Scope (Out) e RF-06 (lista revisada). Task de
+   remoção: T11 (`PLAN.md`), Fase 7 (`PHASES.md`).

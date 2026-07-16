@@ -182,3 +182,34 @@ Antes de implementar, leia:
       Testes: `test/columnStats.spec.ts` — `describe('isDateLikeColumn')` (maioria válida → true;
       maioria inválida → false; só vazias → false; uma passagem O(N)). `test/ViewerTable.spec.ts`
       — RF-05 revisado com dataset real (sem `type` forçado na fixture).
+
+## Phase 7: Remoção do destaque de linha inteira (RF-03 revogado)
+
+Antes de implementar, leia:
+1. `.spec/features/visual-highlights/SPEC.md` — § Amendments v1.3 (decisão de remoção de RF-03)
+2. `.spec/features/visual-highlights/PLAN.md` — T11, decomposição e riscos
+
+- [ ] T11 — Remover o destaque de linha inteira (RF-03 revogado)
+      Arquivos: `app/services/columnStats.ts`, `app/composables/useViewer.ts`,
+      `app/components/ViewerTable.vue`, `app/pages/viewer.vue`, `test/columnStats.spec.ts`,
+      `test/useViewer.spec.ts`, `test/ViewerTable.spec.ts`, `test/pages/viewer.spec.ts`
+      Mudança: decisão de produto do developer após uso real (dataset de 767 linhas): o destaque
+      de fundo na linha inteira (RF-03) tingia a maioria das linhas — qualquer célula duplicada em
+      qualquer coluna já acionava o destaque —, esvaziando o sinal. O badge "dup ×N" por célula
+      (RF-02) permanece e é suficiente. Remover, sem deixar código morto: (1)
+      `app/services/columnStats.ts` — remover o export `rowHasDuplicateValue`; (2)
+      `app/composables/useViewer.ts` — remover a função `isRowDuplicate`, o import de
+      `rowHasDuplicateValue` e sua entrada no objeto retornado (`columnDuplicateCounts` permanece,
+      ainda usado pelo badge RF-02); (3) `app/components/ViewerTable.vue` — remover a prop
+      `isRowDuplicate`, a classe condicional `viewer-table__row--duplicate` na `<tr>` e a regra CSS
+      correspondente; (4) `app/pages/viewer.vue` — remover a desestruturação e a prop
+      `:is-row-duplicate` passada ao `<ViewerTable>`; (5) remover nos testes os casos que
+      exercitam exclusivamente o comportamento removido (`rowHasDuplicateValue`,
+      `isRowDuplicate`, testes "RF-03", asserções de `viewer-table__row--duplicate` em outros
+      testes incluindo o de integração RF-06).
+      Cobre: RF-03 (removido), RF-06 (revisado)
+      Acceptance criteria: `grep -rl` por `isRowDuplicate`/`rowHasDuplicateValue`/
+      `viewer-table__row--duplicate` em `app/` e `test/` retorna vazio; suíte completa
+      (`yarn test`) passa sem nenhuma referência residual; nenhuma regressão nos destaques que
+      permanecem (RF-01, RF-02, RF-04, RF-05) nem em RNF-01 (seleção/numérico/pin).
+      Testes: suíte completa, sem referências residuais ao comportamento removido.
