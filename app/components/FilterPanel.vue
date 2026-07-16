@@ -164,16 +164,17 @@ watch(
 </script>
 
 <template>
-  <div v-if="open" class="filter-overlay" @click.self="onClose">
-    <aside
-      ref="panel"
-      class="filter-overlay__panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Filtros avançados"
-      tabindex="-1"
-      @keydown.esc="onClose"
-    >
+  <Transition name="filter-overlay">
+    <div v-if="open" class="filter-overlay" @click.self="onClose">
+      <aside
+        ref="panel"
+        class="filter-overlay__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Filtros avançados"
+        tabindex="-1"
+        @keydown.esc="onClose"
+      >
       <header class="filter-overlay__header">
         <div class="filter-overlay__heading">
           <h2 class="filter-overlay__title">Filtros avançados</h2>
@@ -278,8 +279,9 @@ watch(
           Filtrar
         </button>
       </footer>
-    </aside>
-  </div>
+      </aside>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -306,6 +308,39 @@ watch(
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow);
   outline: none;
+  overflow: hidden;
+}
+
+/* Abrir/fechar o drawer (RF-06b/UI-03): mesmo efeito de "crescer e aparecer"
+   do StatsPanel (`viewer.vue` `.stats-grow-*`) — a largura do painel cresce de
+   0 até os 400px normais junto com um fade do backdrop. */
+.filter-overlay-enter-active,
+.filter-overlay-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.filter-overlay-enter-active .filter-overlay__panel,
+.filter-overlay-leave-active .filter-overlay__panel {
+  transition: width 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.filter-overlay-enter-from,
+.filter-overlay-leave-to {
+  opacity: 0;
+}
+
+.filter-overlay-enter-from .filter-overlay__panel,
+.filter-overlay-leave-to .filter-overlay__panel {
+  width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-overlay-enter-active,
+  .filter-overlay-leave-active,
+  .filter-overlay-enter-active .filter-overlay__panel,
+  .filter-overlay-leave-active .filter-overlay__panel {
+    transition-duration: 0s;
+  }
 }
 
 .filter-overlay__header {
