@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import SearchInput from '~/components/SearchInput.vue'
 import Dropdown from '~/components/Dropdown.vue'
 import ColumnChip from '~/components/ColumnChip.vue'
@@ -21,7 +22,7 @@ import type { ViewerColumn } from '~/composables/useViewer'
  *
  * Ref de design: `.spec/init/design/README.md#screen-2--visualizador-principal`.
  */
-defineProps<{
+const props = defineProps<{
   /** Total de linhas do dataset (sem filtro). */
   rowCount: number
   /** Colunas do dataset, com tipo, visibilidade e fixação atuais. */
@@ -38,6 +39,21 @@ const emit = defineEmits<{
 
 function onSearch(value: string): void {
   emit('update:search', value)
+}
+
+/** Termo de busca do menu "Colunas" — filtra a lista, independente da busca da tabela. */
+const columnSearch = ref('')
+
+/** Colunas cujo rótulo casa com `columnSearch` (case-insensitive); sem termo, todas. */
+const filteredColumns = computed(() => {
+  const term = columnSearch.value.trim().toLowerCase()
+  if (!term) return props.columns
+  return props.columns.filter((column) => column.label.toLowerCase().includes(term))
+})
+
+/** Limpa a busca ao fechar o menu, para reabrir sempre com a lista completa. */
+function onColumnsMenuClose(): void {
+  columnSearch.value = ''
 }
 
 function onToggle(index: number): void {
@@ -60,7 +76,7 @@ function onTogglePin(index: number): void {
         />
       </div>
 
-      <Dropdown label="Colunas">
+      <Dropdown label="Colunas" @close="onColumnsMenuClose">
         <template #trigger>
           <svg
             class="toolbar__icon"
@@ -76,8 +92,18 @@ function onTogglePin(index: number): void {
           </svg>
           <span>Colunas</span>
         </template>
+        <div class="columns-menu__search">
+          <SearchInput
+            v-model="columnSearch"
+            placeholder="Buscar coluna…"
+            aria-label="Buscar coluna"
+          />
+        </div>
         <ul class="columns-menu" role="none">
-          <li v-for="column in columns" :key="column.index" role="none">
+          <li v-if="filteredColumns.length === 0" class="columns-menu__empty" role="none">
+            Nenhuma coluna encontrada
+          </li>
+          <li v-for="column in filteredColumns" :key="column.index" role="none">
             <div
               class="columns-menu__item"
               :class="{ 'columns-menu__item--pinned': column.pinned }"
@@ -165,6 +191,20 @@ function onTogglePin(index: number): void {
 .toolbar__icon {
   flex: none;
   color: var(--text-2);
+}
+
+/* Busca do menu "Colunas": mesmo `SearchInput` do campo principal, num
+   invólucro compacto (sem o padding do menu ao redor, para ficar rente aos
+   itens da lista logo abaixo). */
+.columns-menu__search {
+  padding: 4px 4px 6px;
+}
+
+.columns-menu__empty {
+  padding: 10px 8px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
 }
 
 .columns-menu {

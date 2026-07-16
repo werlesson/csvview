@@ -97,4 +97,45 @@ describe('ViewerToolbar', () => {
     expect(items[0]!.find('.chip--pinned').exists()).toBe(true)
     expect(items[1]!.find('.chip--pinned').exists()).toBe(false)
   })
+
+  // Busca do menu "Colunas": filtra a lista pelo rótulo, sem afetar a busca
+  // principal da tabela (`search`/`update:search`).
+  it('filtra as colunas do menu "Colunas" pelo termo digitado na busca do menu', async () => {
+    const wrapper = mountToolbar()
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    const menuSearch = wrapper.find('.columns-menu__search input')
+    await menuSearch.setValue('amo')
+
+    const items = wrapper.findAll('.columns-menu__item')
+    expect(items).toHaveLength(1)
+    expect(wrapper.find('.columns-menu__chip').text()).toContain('amount')
+    expect(wrapper.emitted('update:search')).toBeUndefined()
+  })
+
+  it('exibe "Nenhuma coluna encontrada" quando a busca do menu não casa com nada', async () => {
+    const wrapper = mountToolbar()
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+    await wrapper.find('.columns-menu__search input').setValue('zzz')
+
+    expect(wrapper.find('.columns-menu__empty').exists()).toBe(true)
+    expect(wrapper.findAll('.columns-menu__item')).toHaveLength(0)
+  })
+
+  it('limpa a busca do menu "Colunas" ao fechar e reabrir o menu', async () => {
+    const wrapper = mountToolbar()
+
+    await wrapper.find('.dropdown__trigger').trigger('click')
+    await wrapper.find('.columns-menu__search input').setValue('id')
+    expect(wrapper.findAll('.columns-menu__item')).toHaveLength(1)
+
+    // Fecha e reabre o menu.
+    await wrapper.find('.dropdown__trigger').trigger('click')
+    await wrapper.find('.dropdown__trigger').trigger('click')
+
+    expect((wrapper.find('.columns-menu__search input').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.findAll('.columns-menu__item')).toHaveLength(3)
+  })
 })
