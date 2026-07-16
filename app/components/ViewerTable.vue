@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
+import HighlightLegend from '~/components/HighlightLegend.vue'
 import { isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
@@ -301,6 +302,17 @@ function dropIndicatorFor(pos: number): 'before' | 'after' | null {
 
 const scroller = ref<HTMLElement | null>(null)
 
+/**
+ * Legenda fixa (T07, UI-01): `<thead>` ajusta seu `top` sticky para a altura
+ * medida da legenda, evitando sobreposição entre as duas faixas sticky.
+ */
+const legend = ref<{ $el: HTMLElement } | null>(null)
+const legendHeight = ref(0)
+
+onMounted(() => {
+  legendHeight.value = legend.value?.$el?.offsetHeight ?? 0
+})
+
 const rowVirtualizer = useVirtualizer(
   computed(() => ({
     count: props.rows.length,
@@ -347,8 +359,10 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
     role="region"
     aria-label="Tabela de dados"
   >
+    <HighlightLegend ref="legend" class="viewer-table__legend" />
+
     <table class="viewer-table__grid">
-      <thead class="viewer-table__head">
+      <thead class="viewer-table__head" :style="{ top: `${legendHeight}px` }">
         <tr class="viewer-table__row" :style="{ width: gridWidth }">
           <th
             v-for="(column, pos) in columns"
@@ -504,6 +518,16 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
   height: 100%;
   overflow: auto;
   background: var(--bg-1);
+}
+
+/* Legenda fixa (T07, UI-01): mesma técnica de sticky do cabeçalho
+   (`.viewer-table__head`), permanecendo visível acima dele durante o scroll
+   vertical — `z-index` maior para ficar por cima do cabeçalho quando ambos
+   colidem no topo do scroller. */
+.viewer-table__legend {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .viewer-table__grid {

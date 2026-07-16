@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { h, Suspense } from 'vue'
+import { h, nextTick, Suspense } from 'vue'
 import ViewerPage from '~/pages/viewer.vue'
 import { useCurrentDataset, type Dataset } from '~/composables/useCurrentDataset'
 
@@ -205,5 +205,66 @@ describe('viewer.vue — fiação da exportação (T06)', () => {
     expect(wrapper.get('.export-overlay__title').text()).toBe('Exportar dados')
     expect(wrapper.text()).toContain('Linhas filtradas (4)')
     expect(wrapper.text()).toContain('Todas as linhas (4)')
+  })
+})
+
+describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
+  beforeEach(() => {
+    useCurrentDataset().clearDataset()
+    // happy-dom não calcula layout real: sem isto, o scroller do ViewerTable
+    // mede offsetHeight 0 e o virtualizador não renderiza nenhuma linha do
+    // corpo (ver `test/ViewerTable.spec.ts`, describe "T06").
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+  })
+
+  afterEach(() => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  /** Dataset com as quatro condições de destaque: vazio, duplicado, negativo, data inválida. */
+  function makeHighlightDataset(): Dataset {
+    return {
+      header: ['id', 'name', 'amount', 'created'],
+      rows: [
+        ['1', 'Ana', '100', '2026-01-04'],
+        ['2', 'Ana', '-50', '05/13/26'],
+        ['3', '', '20', '2026-02-01'],
+      ],
+    }
+  }
+
+  async function mountHighlightViewer() {
+    useCurrentDataset().setDataset(makeHighlightDataset(), {
+      name: 'highlights.csv',
+      delimiter: 'comma',
+      sizeBytes: 128,
+      rowCount: 3,
+      columnCount: 4,
+    })
+
+    const wrapper = mount(
+      {
+        render: () => h(Suspense, null, { default: () => h(ViewerPage) }),
+      },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    return wrapper
+  }
+
+  it('monta sem erro com um dataset contendo as quatro condições e repassa columnDuplicateCounts/isRowDuplicate não vazios ao ViewerTable', async () => {
+    const wrapper = await mountHighlightViewer()
+    await nextTick()
+    await nextTick()
+
+    // Célula duplicada ("Ana", coluna name): badge "dup ×2" no DOM — só aparece
+    // se `columnDuplicateCounts` chegou não vazio ao ViewerTable.
+    expect(wrapper.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+
+    // Linha com valor duplicado: destaque de linha inteira — só aparece se
+    // `isRowDuplicate` chegou funcional (não vazio) ao ViewerTable (RF-03).
+    expect(wrapper.findAll('.viewer-table__row--duplicate').length).toBeGreaterThan(0)
   })
 })

@@ -741,4 +741,20 @@ describe('ViewerTable', () => {
       expect(rows.length).toBeLessThan(100)
     })
   })
+
+  describe('T07: legenda fixa acima do cabeçalho (UI-01)', () => {
+    it('renderiza a HighlightLegend dentro de .viewer-table, antes do <thead>, com os 4 pares swatch+rótulo', () => {
+      const wrapper = mount(ViewerTable, {
+        props: { columns: makeColumns(), rows: ROWS },
+      })
+
+      const table = wrapper.get('.viewer-table')
+      const legend = table.find('.highlight-legend')
+      expect(legend.exists()).toBe(true)
+      expect(legend.findAll('.highlight-legend__item')).toHaveLength(4)
+
+      const html = table.html()
+      expect(html.indexOf('highlight-legend')).toBeLessThan(html.indexOf('viewer-table__head'))
+    })
+  })
 })
