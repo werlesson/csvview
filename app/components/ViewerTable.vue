@@ -369,12 +369,33 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
  * `useCellEditing()` (T03) e repassa `editable`/`editing`/`invalid-edit`/
  * `dirty` a cada `CsvCell` (T06), chamando `beginEdit`/`confirmEdit`/
  * `cancelEdit` a partir dos emits `edit-start`/`edit-confirm`/`edit-cancel`.
- * `rowIndex` é a posição da linha dentro de `rows` (já filtrada/ordenada por
- * `useViewer`) — nenhum emit/prop de multi-seleção, paste ou estrutura é
- * adicionado (RF-14).
+ * `useCellEditing`/`useCurrentDataset` indexam célula por posição no dataset
+ * **completo** (CT-02, `dataset.value.rows[rowIndex]`), mas `virtualRow.index`
+ * é a posição dentro de `rows` (prop já filtrada/ordenada por `useViewer`) —
+ * as duas só coincidem sem filtro/ordenação ativos. `trueRowIndex` resolve
+ * `virtualRow.index` para o índice real no dataset completo via identidade
+ * de referência da linha (`filter`/`sort` preservam a mesma referência
+ * `string[]`, nunca clonam linhas), para que uma edição sob filtro/ordenação
+ * ativos (RF-13) sempre afete a linha realmente clicada, nunca a linha na
+ * mesma posição do dataset completo. Nenhum emit/prop de multi-seleção,
+ * paste ou estrutura é adicionado (RF-14).
  */
-const { editingCell, validationError, beginEdit, confirmEdit, cancelEdit, isDirty } =
+const { dataset: editingDataset, editingCell, validationError, beginEdit, confirmEdit, cancelEdit, isDirty } =
   useCellEditing()
+
+/** Referência de linha (`string[]`) → índice real no dataset completo (CT-02). */
+const trueRowIndexByRow = computed<Map<string[], number>>(() => {
+  const map = new Map<string[], number>()
+  editingDataset.value?.rows.forEach((row, index) => map.set(row, index))
+  return map
+})
+
+/** Resolve a posição de uma linha visível (`virtualRow.index`, em `rows`) para seu índice real no dataset completo. */
+function trueRowIndex(virtualIndex: number): number {
+  const row = props.rows[virtualIndex]
+  if (row === undefined) return virtualIndex
+  return trueRowIndexByRow.value.get(row) ?? virtualIndex
+}
 
 /** A célula na linha/coluna indicadas está em modo de edição (RF-01). */
 function isEditingCell(rowIndex: number, columnIndex: number): boolean {
@@ -537,10 +558,10 @@ function onEditCancel(): void {
             :negative="negativeFor(column, rows[virtualRow.index]?.[column.index])"
             :invalid-date="invalidDateFor(column, rows[virtualRow.index]?.[column.index])"
             editable
-            :editing="isEditingCell(virtualRow.index, column.index)"
-            :invalid-edit="isInvalidEditCell(virtualRow.index, column.index)"
-            :dirty="isDirty(virtualRow.index, column.index)"
-            @edit-start="onEditStart(virtualRow.index, column.index)"
+            :editing="isEditingCell(trueRowIndex(virtualRow.index), column.index)"
+            :invalid-edit="isInvalidEditCell(trueRowIndex(virtualRow.index), column.index)"
+            :dirty="isDirty(trueRowIndex(virtualRow.index), column.index)"
+            @edit-start="onEditStart(trueRowIndex(virtualRow.index), column.index)"
             @edit-confirm="onEditConfirm"
             @edit-cancel="onEditCancel"
           />

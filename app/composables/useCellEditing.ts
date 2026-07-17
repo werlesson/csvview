@@ -178,6 +178,7 @@ export function useCellEditing() {
   }
 
   return {
+    dataset,
     meta,
     editingCell: readonly(editingCell),
     validationError: readonly(validationError),

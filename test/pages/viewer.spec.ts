@@ -380,3 +380,163 @@ describe('viewer.vue — fiação da edição de célula (cell-editing, T09)', (
     expect(overwritten?.content).toContain('pending')
   })
 })
+
+describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10)', () => {
+  // Nenhuma alteração de produção nesta suíte — só os 3 cenários que não cabem
+  // isoladamente em nenhum componente/composable individual (RF-13, RF-10).
+  // Mesmo stub de `offsetHeight` + duplo `nextTick` de `test/ViewerTable.spec.ts`
+  // (ver MEMORY viewertable-virtualizer-no-body-rows-jsdom): sem ele o
+  // virtualizador não renderiza nenhuma linha do corpo em happy-dom.
+  const CONTENT = 'id,status,amount\n1,settled,100\n2,failed,250\n3,failed,-50\n4,settled,10'
+
+  beforeEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  it('RF-13: confirmar uma edição que deixa de satisfazer um filtro ativo remove a linha da view imediatamente', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    // Filtra por status = "failed" (linhas originais 1 e 2, nesta ordem).
+    await applyFilterViaUi(wrapper, '1', 'igual', 'failed')
+    expect(wrapper.text()).toContain('2 linhas')
+
+    let bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    expect(bodyRows).toHaveLength(2)
+
+    // Edita a coluna "status" da primeira linha filtrada (id=2, "failed" → "settled"),
+    // deixando de satisfazer o filtro "status igual a failed".
+    const cell = bodyRows[0]!.findAll('.csv-cell')[1]!
+    await cell.trigger('click')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('settled')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    // A linha some da view imediatamente, sem nenhuma ação adicional (refresh/reaplicar filtro).
+    expect(wrapper.text()).toContain('1 linhas')
+    bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    expect(bodyRows).toHaveLength(1)
+    expect(bodyRows[0]!.text()).toContain('failed')
+    expect(bodyRows[0]!.text()).toContain('-50')
+  })
+
+  it('RF-13: confirmar uma edição que muda a posição relativa da linha sob ordenação ativa reposiciona a linha imediatamente', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    // Ordena por "amount" (clique simples no cabeçalho, sem Shift) — ascendente.
+    const headerButtons = wrapper.findAll('.viewer-table__th-button')
+    await headerButtons[2]!.trigger('click')
+    await nextTick()
+
+    let bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    expect(bodyRows).toHaveLength(4)
+    expect(bodyRows[0]!.text()).toContain('-50')
+    expect(bodyRows[1]!.text()).toContain('10')
+    expect(bodyRows[2]!.text()).toContain('100')
+    expect(bodyRows[3]!.text()).toContain('250')
+
+    // Edita a linha de amount=10 (posição 1, id=4) para 5000 — passa a ser a maior.
+    const cell = bodyRows[1]!.findAll('.csv-cell')[2]!
+    await cell.trigger('click')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('5000')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    // A linha se reposiciona imediatamente conforme a chave de ordenação ativa,
+    // sem nenhum refresh/reaplicação explícita do usuário.
+    bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    expect(bodyRows).toHaveLength(4)
+    expect(bodyRows[0]!.text()).toContain('-50')
+    expect(bodyRows[1]!.text()).toContain('100')
+    expect(bodyRows[2]!.text()).toContain('250')
+    expect(bodyRows[3]!.text()).toContain('5000')
+  })
+
+  it('RF-10: reabrir um dataset diferente zera canUndo/canRedo e o indicador de "sujo" de qualquer célula editada no dataset anterior', async () => {
+    const filesStore = useFilesStore()
+    const fileIdA = await filesStore.saveFile({
+      name: 'a.csv',
+      delimiter: 'comma',
+      size_bytes: CONTENT.length,
+      row_count: 4,
+      column_count: 3,
+      content: CONTENT,
+    })
+
+    useCurrentDataset().setDataset(makeDataset(), {
+      id: fileIdA,
+      name: 'a.csv',
+      delimiter: 'comma',
+      sizeBytes: CONTENT.length,
+      rowCount: 4,
+      columnCount: 3,
+    })
+
+    const wrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    // Edita e confirma uma célula do dataset A — registra 1 entrada desfazível e marca "sujo".
+    const bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    const cell = bodyRows[0]!.findAll('.csv-cell')[1]!
+    await cell.trigger('click')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('pending')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    expect(cell.find('.csv-cell__dirty-indicator').exists()).toBe(true)
+    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeUndefined()
+
+    // Reabre um dataset diferente (novo `id`) — simula reabrir outro arquivo no Viewer.
+    const OTHER_CONTENT = 'x,y\n1,2\n3,4'
+    const fileIdB = await filesStore.saveFile({
+      name: 'b.csv',
+      delimiter: 'comma',
+      size_bytes: OTHER_CONTENT.length,
+      row_count: 2,
+      column_count: 2,
+      content: OTHER_CONTENT,
+    })
+
+    useCurrentDataset().setDataset(
+      { header: ['x', 'y'], rows: [['1', '2'], ['3', '4']] },
+      {
+        id: fileIdB,
+        name: 'b.csv',
+        delimiter: 'comma',
+        sizeBytes: OTHER_CONTENT.length,
+        rowCount: 2,
+        columnCount: 2,
+      },
+    )
+    await nextTick()
+    await nextTick()
+
+    // Undo/redo inertes e nenhuma célula "suja" sobrevive à troca de dataset (RF-10).
+    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(false)
+  })
+})
