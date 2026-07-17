@@ -79,36 +79,39 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
   /**
    * Chaves de ordenação ativas, por índice **original** da coluna e em ordem de
    * prioridade decrescente (RF-01, RF-02). Vazio = ordem original do dataset.
-   * Estado apenas em memória de sessão — nada é gravado em IndexedDB (RNF-04).
+   * Persistido de forma durável por `useViewerSession.ts` (composable irmão),
+   * chaveado pelo `FileRecord.id` do dataset — este composable permanece
+   * estado derivado puro, sem import de `idb`/`useDatabase`.
    */
   const sortKeys = ref<SortKey[]>([])
   /**
    * Larguras de coluna definidas pelo usuário, por índice **original** da
    * coluna (RF-04) — sobrevive a ocultar/reexibir e reordenar. Colunas sem
-   * entrada usam a largura padrão (`columnWidth`). Estado apenas em memória de
-   * sessão — nada é gravado em IndexedDB (RNF-04); ajustes são O(1), sem
-   * re-parse nem cópia de linhas (RNF-03).
+   * entrada usam a largura padrão (`columnWidth`). Persistido de forma
+   * durável por `useViewerSession.ts` (composable irmão); ajustes são O(1),
+   * sem re-parse nem cópia de linhas (RNF-03).
    */
   const widths = ref<Map<number, number>>(new Map())
   /**
    * Ordem de exibição das colunas NÃO fixadas, como posição → índice
    * **original** da coluna (RF-05) — sobrevive a ocultar/reexibir. Vazio (ou
    * de tamanho divergente do dataset atual) equivale à ordem identidade do
-   * cabeçalho; ver `effectiveOrder`. Estado apenas em memória (RNF-04).
+   * cabeçalho; ver `effectiveOrder`. Persistido de forma durável por
+   * `useViewerSession.ts` (composable irmão).
    */
   const order = ref<number[]>([])
   /**
    * Conjunto de colunas fixadas (pin) à esquerda, por índice **original**
    * (RF-06). A ordem de iteração de um `Set` é a ordem de inserção, o que
    * registra a **sequência de fixação** usada para ordenar o grupo fixado.
-   * Estado apenas em memória (RNF-04).
+   * Persistido de forma durável por `useViewerSession.ts` (composable irmão).
    */
   const pinned = ref<Set<number>>(new Set())
   /**
    * Filtros de coluna ativos (RF-07): cada entrada é um `ColumnFilter` (chip
    * do painel de filtros), referenciando a coluna por índice **original** —
-   * inclusive colunas ocultas. Estado apenas em memória de sessão; nada é
-   * gravado em IndexedDB/localStorage.
+   * inclusive colunas ocultas. Persistido de forma durável por
+   * `useViewerSession.ts` (composable irmão).
    */
   const filters = ref<ColumnFilter[]>([])
 
@@ -499,6 +502,7 @@ export function useViewer(source: MaybeRefOrGetter<Dataset | null>) {
 
   return {
     search,
+    hidden,
     columns,
     visibleColumns,
     columnTypes,

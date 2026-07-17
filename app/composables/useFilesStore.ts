@@ -2,6 +2,7 @@ import {
   FILES_STORE,
   LAST_OPENED_INDEX,
   openDatabase,
+  SESSIONS_STORE,
   type FileRecord,
 } from '~/composables/useDatabase'
 
@@ -55,16 +56,20 @@ export function useFilesStore() {
       last_opened_at: file.last_opened_at ?? now,
     }
 
-    const tx = db.transaction(FILES_STORE, 'readwrite')
+    const tx = db.transaction([FILES_STORE, SESSIONS_STORE], 'readwrite')
+    const filesStore = tx.objectStore(FILES_STORE)
     // `add` gera a chave auto-incremento; o keyPath é `id`.
-    const id = (await tx.store.add(record as FileRecord)) as number
+    const id = (await filesStore.add(record as FileRecord)) as number
 
     // Política LRU: se ultrapassar o limite, remove o(s) mais antigo(s) por
-    // `last_opened_at`, percorrendo o índice em ordem ascendente.
-    let excess = (await tx.store.count()) - MAX_RECENT_FILES
-    let cursor = await tx.store.index(LAST_OPENED_INDEX).openCursor()
+    // `last_opened_at`, percorrendo o índice em ordem ascendente — e a sessão
+    // associada a cada um (RF-07/CT-03), na mesma transação.
+    let excess = (await filesStore.count()) - MAX_RECENT_FILES
+    let cursor = await filesStore.index(LAST_OPENED_INDEX).openCursor()
     while (cursor && excess > 0) {
+      const evictedId = cursor.primaryKey
       await cursor.delete()
+      await tx.objectStore(SESSIONS_STORE).delete(evictedId)
       excess -= 1
       cursor = await cursor.continue()
     }
@@ -89,10 +94,16 @@ export function useFilesStore() {
     return ascending.reverse()
   }
 
-  /** Remove um arquivo pelo id. */
+  /**
+   * Remove um arquivo pelo id e, na mesma transação, a sessão associada
+   * (RF-07/CT-03) — nunca deixa um registro de sessão órfão.
+   */
   async function deleteFile(id: number): Promise<void> {
     const db = await openDatabase()
-    await db.delete(FILES_STORE, id)
+    const tx = db.transaction([FILES_STORE, SESSIONS_STORE], 'readwrite')
+    await tx.objectStore(FILES_STORE).delete(id)
+    await tx.objectStore(SESSIONS_STORE).delete(id)
+    await tx.done
   }
 
   /**

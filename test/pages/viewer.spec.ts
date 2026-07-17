@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { h, nextTick, Suspense } from 'vue'
 import ViewerPage from '~/pages/viewer.vue'
-import { useCurrentDataset, type Dataset } from '~/composables/useCurrentDataset'
+import {
+  useCurrentDataset,
+  type Dataset,
+  type DatasetMeta,
+} from '~/composables/useCurrentDataset'
 import { useFilesStore } from '~/composables/useFilesStore'
 import { deleteDatabase } from '~/composables/useDatabase'
 
@@ -264,6 +268,200 @@ describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
     // Célula duplicada ("Ana", coluna name): badge "dup ×2" no DOM — só aparece
     // se `columnDuplicateCounts` chegou não vazio ao ViewerTable.
     expect(wrapper.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+  })
+})
+
+describe('viewer.vue — fiação da sessão do Viewer (Fase 4, T07)', () => {
+  /** Debounce padrão de `useViewerSession` (produção, `DEFAULT_DEBOUNCE_MS`). */
+  const DEBOUNCE_MS = 300
+
+  /** Dataset com 5 colunas — espaço suficiente para mutar os seis aspectos em colunas distintas. */
+  function makeWideDataset(): Dataset {
+    return {
+      header: ['id', 'status', 'amount', 'category', 'region'],
+      rows: [
+        ['1', 'settled', '100', 'A', 'north'],
+        ['2', 'failed', '250', 'B', 'south'],
+        ['3', 'failed', '-50', 'A', 'east'],
+        ['4', 'settled', '10', 'B', 'west'],
+      ],
+    }
+  }
+
+  function makeWideMeta(overrides: Partial<DatasetMeta> = {}): DatasetMeta {
+    return {
+      name: 'wide.csv',
+      delimiter: 'comma',
+      sizeBytes: 256,
+      rowCount: 4,
+      columnCount: 5,
+      ...overrides,
+    }
+  }
+
+  async function mountWideViewer(meta: DatasetMeta) {
+    useCurrentDataset().setDataset(makeWideDataset(), meta)
+    const wrapper = mount(
+      {
+        render: () => h(Suspense, null, { default: () => h(ViewerPage) }),
+      },
+      { attachTo: document.body },
+    )
+    // A restauração da sessão (RF-02/RF-03) encadeia várias voltas
+    // assíncronas reais (abrir o IndexedDB, ler o registro, aplicar aos
+    // refs) — um único `flushPromises()` não é suficiente para esvaziá-las.
+    for (let i = 0; i < 5; i++) await flushPromises()
+    return wrapper
+  }
+
+  /**
+   * Muta os seis aspectos persistidos via UI, cada um numa coluna distinta:
+   * filtra por `category`, ordena `id`+`amount` (Shift+clique), oculta
+   * `region`, redimensiona `status`, reordena `category`↔`amount` e fixa `id`.
+   */
+  async function mutateAllSixAspects(
+    wrapper: Awaited<ReturnType<typeof mountWideViewer>>,
+  ): Promise<void> {
+    // Filtro (RF-01/CT-01 `filters`): category == 'A'.
+    await applyFilterViaUi(wrapper, '3', 'igual', 'A')
+
+    // Ordenação (`sortKeys`): clique simples em "id", Shift+clique em "amount".
+    await wrapper.findAll('.viewer-table__th-button')[0]!.trigger('click')
+    await wrapper
+      .findAll('.viewer-table__th-button')[2]!
+      .trigger('click', { shiftKey: true })
+
+    // Ocultar (`hidden`): desmarca "region" (índice 4) no menu "Colunas".
+    await wrapper.get('.dropdown__trigger').trigger('click')
+    await wrapper.findAll('.columns-menu__checkbox')[4]!.trigger('change')
+    await wrapper.get('.dropdown__trigger').trigger('click')
+
+    // Redimensionar (`widths`): "status" (agora posição 1, com "region" oculta) +50px.
+    const resizeHandle = wrapper.findAll('.viewer-table__th-resize')[1]!
+    await resizeHandle.trigger('pointerdown', { clientX: 100, pointerId: 1 })
+    await resizeHandle.trigger('pointermove', { clientX: 150, pointerId: 1 })
+    await resizeHandle.trigger('pointerup', { clientX: 150, pointerId: 1 })
+
+    // Reordenar (`order`): troca "category" (posição 3) com "amount" (posição 2).
+    const reorderButtons = wrapper.findAll('.viewer-table__th-button')
+    const reorderHeaders = wrapper.findAll('.viewer-table__th')
+    await reorderButtons[3]!.trigger('dragstart')
+    await reorderHeaders[2]!.trigger('dragover')
+    await reorderHeaders[2]!.trigger('drop')
+    await reorderButtons[3]!.trigger('dragend')
+
+    // Fixar (`pinned`): "id" (posição 0, não afetada pelas mutações acima).
+    await wrapper.findAll('.viewer-table__th-pin')[0]!.trigger('click')
+  }
+
+  /** Espera a janela de debounce elapsar (escrita assíncrona, RF-01/RNF-01). */
+  async function waitForDebounce(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS + 100))
+    await flushPromises()
+  }
+
+  /** Assinatura observável (via DOM) dos seis aspectos, para comparar pré/pós remount. */
+  function captureSignals(wrapper: Awaited<ReturnType<typeof mountWideViewer>>) {
+    const headers = wrapper.findAll('.viewer-table__th')
+    return {
+      labels: headers.map((h) => h.get('.viewer-table__th-label').text()),
+      styles: headers.map((h) => h.attributes('style')),
+      pinned: headers.map((h) => h.classes().includes('viewer-table__th--pinned')),
+      sortIcons: headers.map((h) => {
+        const icon = h.find('.viewer-table__th-sort-icon')
+        return icon.exists()
+          ? icon.classes().find((c) => c.startsWith('viewer-table__th-sort-icon--'))
+          : null
+      }),
+      priorities: headers.map((h) => {
+        const priority = h.find('.viewer-table__th-priority')
+        return priority.exists() ? priority.text() : null
+      }),
+      filterBadge: wrapper.find('.toolbar__filters-badge').exists()
+        ? wrapper.get('.toolbar__filters-badge').text()
+        : null,
+      rowCountText: wrapper.get('.toolbar__count').text(),
+    }
+  }
+
+  beforeEach(async () => {
+    useCurrentDataset().clearDataset()
+    await deleteDatabase()
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  it('mutar filtro + ordenação (2 colunas) + ocultar + redimensionar + reordenar + fixar, remontar restaura os seis aspectos idênticos', async () => {
+    const meta = makeWideMeta({ id: 1 })
+    const wrapper = await mountWideViewer(meta)
+
+    await mutateAllSixAspects(wrapper)
+    const before = captureSignals(wrapper)
+
+    // Confere que as mutações realmente pegaram, antes de comparar com o remount.
+    expect(before.filterBadge).toBe('1')
+    expect(before.rowCountText).toContain('2 linhas')
+    expect(before.pinned.some(Boolean)).toBe(true)
+    expect(before.sortIcons.filter((icon) => icon !== null)).toHaveLength(2)
+    expect(before.priorities.filter((p) => p !== null)).toHaveLength(2)
+    expect(before.labels).not.toContain('region')
+
+    await waitForDebounce()
+    wrapper.unmount()
+
+    // Remonta com o MESMO dataset/meta ainda em memória (mesma convenção de
+    // "reload" já usada neste repo — ver PLAN.md "Open Questions").
+    const remounted = await mountWideViewer(meta)
+    const after = captureSignals(remounted)
+
+    expect(after).toEqual(before)
+  })
+
+  it('reabrir com um meta.id diferente não herda a sessão do primeiro arquivo (isolamento por id)', async () => {
+    const firstMeta = makeWideMeta({ id: 1 })
+    const firstWrapper = await mountWideViewer(firstMeta)
+
+    await mutateAllSixAspects(firstWrapper)
+    await waitForDebounce()
+    firstWrapper.unmount()
+
+    const secondMeta = makeWideMeta({ id: 2 })
+    const secondWrapper = await mountWideViewer(secondMeta)
+    const signals = captureSignals(secondWrapper)
+
+    // Estado padrão: nenhuma coluna fixada, nenhum ícone/prioridade de
+    // ordenação, todas as colunas visíveis (inclusive "region") e sem filtro.
+    expect(signals.pinned.every((p) => p === false)).toBe(true)
+    expect(signals.sortIcons.every((icon) => icon === null)).toBe(true)
+    expect(signals.priorities.every((p) => p === null)).toBe(true)
+    expect(signals.labels).toEqual(['id', 'status', 'amount', 'category', 'region'])
+    expect(signals.filterBadge).toBeNull()
+    expect(signals.rowCountText).toContain('4 linhas')
+  })
+
+  it('um dataset com meta.id === undefined permanece funcional e não acessa IndexedDB/localStorage', async () => {
+    const wrapper = await mountWideViewer(makeWideMeta({ id: undefined }))
+
+    const openSpy = vi.spyOn(indexedDB, 'open')
+    const getItemSpy = vi.spyOn(Storage.prototype, 'getItem')
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+
+    await mutateAllSixAspects(wrapper)
+    await waitForDebounce()
+
+    const signals = captureSignals(wrapper)
+    expect(signals.filterBadge).toBe('1')
+    expect(signals.rowCountText).toContain('2 linhas')
+    expect(signals.pinned.some(Boolean)).toBe(true)
+
+    expect(openSpy).not.toHaveBeenCalled()
+    expect(getItemSpy).not.toHaveBeenCalled()
+    expect(setItemSpy).not.toHaveBeenCalled()
   })
 })
 
