@@ -182,4 +182,81 @@ describe('ViewerToolbar', () => {
     expect((wrapper.find('.columns-menu__search input').element as HTMLInputElement).value).toBe('')
     expect(wrapper.findAll('.columns-menu__item')).toHaveLength(3)
   })
+
+  describe('undo/redo e salvar/sobrescrever (cell-editing, T08)', () => {
+    it('RF-09: "Desfazer" e "Refazer" ficam desabilitados quando canUndo/canRedo são false', () => {
+      const wrapper = mountToolbar({ canUndo: false, canRedo: false })
+      const undoBtn = wrapper.find('.toolbar__history-btn[aria-label="Desfazer"]')
+      const redoBtn = wrapper.find('.toolbar__history-btn[aria-label="Refazer"]')
+
+      expect((undoBtn.element as HTMLButtonElement).disabled).toBe(true)
+      expect((redoBtn.element as HTMLButtonElement).disabled).toBe(true)
+    })
+
+    it('RF-06/RF-09: "Desfazer" habilitado emite "undo" ao clicar', async () => {
+      const wrapper = mountToolbar({ canUndo: true })
+      const undoBtn = wrapper.find('.toolbar__history-btn[aria-label="Desfazer"]')
+
+      expect((undoBtn.element as HTMLButtonElement).disabled).toBe(false)
+      await undoBtn.trigger('click')
+      expect(wrapper.emitted('undo')).toEqual([[]])
+    })
+
+    it('RF-07/RF-09: "Refazer" habilitado emite "redo" ao clicar', async () => {
+      const wrapper = mountToolbar({ canRedo: true })
+      const redoBtn = wrapper.find('.toolbar__history-btn[aria-label="Refazer"]')
+
+      expect((redoBtn.element as HTMLButtonElement).disabled).toBe(false)
+      await redoBtn.trigger('click')
+      expect(wrapper.emitted('redo')).toEqual([[]])
+    })
+
+    it('"Desfazer" desabilitado não emite "undo" ao clicar', async () => {
+      const wrapper = mountToolbar({ canUndo: false })
+      await wrapper.find('.toolbar__history-btn[aria-label="Desfazer"]').trigger('click')
+      expect(wrapper.emitted('undo')).toBeUndefined()
+    })
+
+    it('"Refazer" desabilitado não emite "redo" ao clicar', async () => {
+      const wrapper = mountToolbar({ canRedo: false })
+      await wrapper.find('.toolbar__history-btn[aria-label="Refazer"]').trigger('click')
+      expect(wrapper.emitted('redo')).toBeUndefined()
+    })
+
+    it('RF-11: "Salvar nova versão" emite "save-new-version" ao clicar', async () => {
+      const wrapper = mountToolbar()
+      await wrapper.find('.toolbar__save-version').trigger('click')
+      expect(wrapper.emitted('save-new-version')).toEqual([[]])
+      expect(wrapper.emitted('overwrite-original')).toBeUndefined()
+    })
+
+    it('RF-15: "Sobrescrever original" emite "overwrite-original" ao clicar', async () => {
+      const wrapper = mountToolbar()
+      await wrapper.find('.toolbar__overwrite').trigger('click')
+      expect(wrapper.emitted('overwrite-original')).toEqual([[]])
+      expect(wrapper.emitted('save-new-version')).toBeUndefined()
+    })
+
+    it('CT-04: "Salvar nova versão" e "Sobrescrever original" são visualmente distintos entre si', () => {
+      const wrapper = mountToolbar()
+      const saveBtn = wrapper.find('.toolbar__save-version')
+      const overwriteBtn = wrapper.find('.toolbar__overwrite')
+
+      expect(saveBtn.exists()).toBe(true)
+      expect(overwriteBtn.exists()).toBe(true)
+      expect(saveBtn.classes()).not.toEqual(overwriteBtn.classes())
+    })
+
+    it('RNF-02: exibe a mensagem de erro quando saveError está preenchido', () => {
+      const wrapper = mountToolbar({ saveError: 'Não foi possível salvar a nova versão.' })
+      expect(wrapper.find('.toolbar__save-error').exists()).toBe(true)
+      expect(wrapper.text()).toContain('Não foi possível salvar a nova versão.')
+    })
+
+    it('não exibe mensagem de erro quando saveError é null/ausente, sem bloquear os demais controles', () => {
+      const wrapper = mountToolbar()
+      expect(wrapper.find('.toolbar__save-error').exists()).toBe(false)
+      expect((wrapper.find('.toolbar__export').element as HTMLButtonElement).disabled).toBe(false)
+    })
+  })
 })

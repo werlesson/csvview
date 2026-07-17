@@ -100,7 +100,7 @@ Antes de implementar, leia:
 1. `.spec/features/cell-editing/SPEC.md` — requisitos RIGID que esta fase cobre
 2. `.spec/features/cell-editing/PLAN.md` — decomposição completa, dependências e riscos
 
-- [ ] T06 — `CsvCell.vue`: modo de edição inline
+- [x] T06 — `CsvCell.vue`: modo de edição inline
       Arquivos: `app/components/CsvCell.vue`
       Mudança: props `editable`/`editing`/`invalidEdit`/`dirty` e emits
       `edit-start`/`edit-confirm(value)`/`edit-cancel`; clique/duplo-clique
@@ -116,7 +116,7 @@ Antes de implementar, leia:
       renderizam seus indicadores só quando `true`.
       Testes: `test/CsvCell.spec.ts` — cada AC acima.
 
-- [ ] T08 — `ViewerToolbar.vue`: ações de undo/redo e salvar/sobrescrever
+- [x] T08 — `ViewerToolbar.vue`: ações de undo/redo e salvar/sobrescrever
       Arquivos: `app/components/ViewerToolbar.vue`
       Mudança: botões "Desfazer"/"Refazer" (desabilitados sem
       `canUndo`/`canRedo`, RF-09) e "Salvar nova versão"/"Sobrescrever
