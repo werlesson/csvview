@@ -214,6 +214,35 @@ describe('viewer.vue — fiação da exportação (T06)', () => {
   })
 })
 
+describe('viewer.vue — entrada "Comparar" (file-comparison, T07)', () => {
+  beforeEach(() => {
+    useCurrentDataset().clearDataset()
+  })
+
+  afterEach(() => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('@open-compare da toolbar dispara navigateTo("/compare"), sem alterar nenhum outro estado do Viewer', async () => {
+    const wrapper = await mountViewer()
+
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+
+    await wrapper.get('.toolbar__compare').trigger('click')
+
+    expect(navigateToSpy).toHaveBeenCalledTimes(1)
+    expect(navigateToSpy).toHaveBeenCalledWith('/compare')
+    // Nenhum comportamento existente do Viewer muda (busca/filtros/exportação seguem intactos).
+    expect(wrapper.find('.export-overlay').exists()).toBe(false)
+    expect(wrapper.find('.filter-overlay').exists()).toBe(false)
+    expect(wrapper.text()).toContain('4 linhas')
+  })
+})
+
 describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
   beforeEach(() => {
     useCurrentDataset().clearDataset()

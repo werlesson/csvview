@@ -54,6 +54,7 @@ const emit = defineEmits<{
   (e: 'toggle-pin', index: number): void
   (e: 'toggle-filters'): void
   (e: 'open-export'): void
+  (e: 'open-compare'): void
   (e: 'undo'): void
   (e: 'redo'): void
   (e: 'save-new-version'): void
@@ -66,6 +67,10 @@ function onToggleFilters(): void {
 
 function onOpenExport(): void {
   emit('open-export')
+}
+
+function onOpenCompare(): void {
+  emit('open-compare')
 }
 
 function onUndo(): void {
@@ -221,6 +226,32 @@ function onTogglePin(index: number): void {
     </div>
 
     <div class="toolbar__meta">
+      <button
+        type="button"
+        class="toolbar__compare"
+        aria-label="Comparar"
+        @click="onOpenCompare"
+      >
+        <svg
+          class="toolbar__icon"
+          viewBox="0 0 16 16"
+          width="15"
+          height="15"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            d="M5.5 2 2 5.5 5.5 9 M2 5.5 H9.5 M10.5 7 14 10.5 10.5 14 M14 10.5 H6.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span>Comparar</span>
+      </button>
+
       <span v-if="saveError" class="toolbar__save-error" role="alert">{{ saveError }}</span>
 
       <div class="toolbar__history" role="group" aria-label="Desfazer/Refazer">
@@ -410,6 +441,30 @@ function onTogglePin(index: number): void {
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Controle "Comparar" (RF-02, T07): mesmo padrão visual secundário dos botões
+   de "Desfazer"/"Refazer" — navega para a tela de comparação (`/compare`),
+   sem alterar nenhum estado existente do Viewer. */
+.toolbar__compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__compare:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 /* Grupo "Desfazer"/"Refazer" (RF-06, RF-07, RF-09). */
