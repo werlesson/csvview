@@ -24,30 +24,30 @@
 | `yarn test` | Run unit tests once (`vitest run`) |
 | `yarn test:watch` | Run tests in watch mode (`vitest`) |
 
-- Lint: none configured — no ESLint/Prettier config file, no lint script in `package.json`, no CI workflow (no `.github` directory).
+- Lint: none configured — no ESLint/Prettier config file, no lint script in `package.json`, no CI workflow (no `.github/workflows`).
 - Coverage: none configured — no coverage tool or script.
 - `postinstall` runs `nuxt prepare` to regenerate `.nuxt/` types.
 
 ## 2. Code Style & Project Conventions
 
-- TypeScript `^7.0.2` (`package.json:35`); Node `>=22.12.0` required (`package.json:6`, `.nvmrc: "22"`).
+- TypeScript `^7.0.2` (`package.json`); Node `>=22.12.0` required (`package.json` engines, `.nvmrc: "22"`).
 - Vue 3 SFCs (`^3.5.39`) with `<script setup lang="ts">`; app code lives under `app/`, the Nuxt 4 `srcDir` (components, composables, layouts, pages, services).
 - Tailwind CSS v4 via `@tailwindcss/vite`, wired in `nuxt.config.ts`; single entrypoint `app/assets/css/main.css` (`@import "tailwindcss"`); styling via inline utility classes, no scoped `<style>` blocks.
 - Path aliases `~` and `@` both resolve to `./app` (`vitest.config.ts`, `tsconfig.json`).
-- Pure domain logic isolated in `app/services/` (`csvParser.ts`, `csvParser.worker.ts`, `columnStats.ts`, `formatFile.ts`) — kept framework-free and unit-testable.
+- Pure domain logic isolated in `app/services/` — framework-free, unit-testable: `csvParser.ts`, `csvParser.worker.ts`, `columnStats.ts`, `columnFilters.ts`, `exportData.ts`, `exportXlsx.ts`, `filterLabels.ts`, `formatFile.ts`, `viewerSession.ts`.
 - No lint tooling present (`lint_tools: []`) — no enforced formatting rules to cite; conventions above are observed in source, not tool-enforced.
 - See `docs/agents/coding_guidelines.md`.
 
 ## 3. Agent Communication & Behavioral Guidelines
 
 - Use `yarn` for all package operations; `yarn.lock` is the only lockfile present (source of truth).
-- Domain code spans `app/components/` (16 Vue SFCs), `app/composables/` (8 composables: `useCsvParser`, `useCurrentDataset`, `useDatabase`, `useFilesStore`, `useOpenFile`, `useSettingsStore`, `useTheme`, `useViewer`), and `app/services/` — this is not scaffold code; the app is a client-side CSV viewer with parsing, IndexedDB persistence, and a Web Worker.
-- App is `ssr:false` with Nitro `preset:'static'` (`nuxt.config.ts:12-15`) — pure client-side SPA, no server runtime and no backend API surface to design against.
+- Domain code spans `app/components/` (16 Vue SFCs: `ViewerTable`, `ExportModal`, `FilterPanel`, `StatsPanel`, `Dropzone`, etc.), `app/composables/` (12: `useCsvParser`, `useDatabase`, `useFilesStore`, `useViewer`, `useViewerSession`, `useSessionStore`, `useSettingsStore`, `useTheme`, `useOpenFile`, `useCellEditing`, `useSaveVersion`, `useCurrentDataset`, `useExportModal`), and `app/services/` — this is not scaffold code; the app is a client-side CSV viewer with streaming parse, filters, export, and IndexedDB-backed sessions.
+- App is `ssr:false` with Nitro `preset:'static'` (`nuxt.config.ts`) — pure client-side SPA, no server runtime and no backend API surface to design against.
 
 ### Never in this repository
 
 - Never use `npm` or `pnpm` — the repo is pinned to `yarn` (`yarn.lock` present, no other lockfile found).
-- Never commit `.nuxt/` or `.output/` — both are generated build artifacts and gitignored.
+- Never commit `.nuxt/`, `.output/`, or `dist` — all are generated build artifacts and gitignored.
 
 ## 4. Setup, Troubleshooting and Tips
 
@@ -75,15 +75,16 @@ yarn generate
 |---------|-------|
 | `vue-tsc` reports type-check errors | Known broken on TypeScript `^7.0.2` (`vue-tsc ^3.3.7`) — validate with `yarn test` instead. |
 
-- Tests run under `happy-dom` with `@vue/test-utils` `mount`; globals enabled (`vitest.config.ts:15`).
-- IndexedDB-touching tests (`useDatabase`, `useFilesStore`, `useSettingsStore`) rely on `fake-indexeddb` (`package.json`) — no real browser needed.
+- Tests run under `happy-dom` with `@vue/test-utils` `mount`; globals enabled (`vitest.config.ts`).
+- Test layout: flat `.spec.ts` files in `test/`, plus `test/pages/` (`index.spec.ts`, `pageTransition.spec.ts`, `viewer.spec.ts`); `test/setup.ts` is the Vitest setup file.
+- IndexedDB-touching tests (`useDatabase`, `useFilesStore`, `useSessionStore`, `useSettingsStore`) rely on `fake-indexeddb` (`package.json`) — no real browser needed.
 - If aliases fail to resolve in tests, confirm `~`/`@` map to `./app` in `vitest.config.ts`.
 
 ## 5. References
 
 | Doc | Purpose |
 |-----|---------|
-| `README.md` | Nuxt Minimal Starter — unmodified install/dev/build/preview boilerplate |
+| `README.md` | Project overview (pt-BR): features, design system, stack, structure, roadmap |
 | `nuxt.config.ts` | Nuxt config (`ssr:false`, Nitro `preset:'static'`, Tailwind vite plugin, fonts) |
 | `vitest.config.ts` | Vitest config (`happy-dom`, `~`/`@` aliases, setup file) |
 | `package.json` | Scripts, dependencies, engines |

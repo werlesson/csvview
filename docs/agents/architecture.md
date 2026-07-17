@@ -13,17 +13,22 @@ Component-based Vue 3 SPA on Nuxt 4 conventions (`srcDir: app/`), organized as U
 ├── app/                       # Nuxt srcDir — all application code
 │   ├── app.vue                # root component: useTheme() + NuxtLayout/NuxtPage
 │   ├── assets/css/main.css    # Tailwind v4 entrypoint (@import "tailwindcss")
-│   ├── components/            # 16 Vue SFCs: presentational + domain (CsvCell,
+│   ├── components/            # 20 Vue SFCs: presentational + domain (CsvCell,
 │   │                          #   ViewerTable, ViewerToolbar, StatsPanel,
 │   │                          #   StatsHistogram, RecentFiles, Dropzone, ThemeToggle,
-│   │                          #   Badge, Button, ColumnChip, Dropdown, LogoMark,
-│   │                          #   SearchInput, Select, Tooltip)
-│   ├── composables/           # useCsvParser, useCurrentDataset, useDatabase,
-│   │                          #   useFilesStore, useOpenFile, useSettingsStore,
-│   │                          #   useTheme, useViewer — reactive state + orchestration
+│   │                          #   ExportModal, FilterPanel, FilterChips,
+│   │                          #   HighlightLegend, Badge, Button, ColumnChip,
+│   │                          #   Dropdown, LogoMark, SearchInput, Select, Tooltip)
+│   ├── composables/           # 13 composables: useCsvParser, useCurrentDataset,
+│   │                          #   useDatabase, useFilesStore, useOpenFile,
+│   │                          #   useSettingsStore, useTheme, useViewer,
+│   │                          #   useSessionStore, useViewerSession,
+│   │                          #   useCellEditing, useSaveVersion, useExportModal
 │   ├── layouts/default.vue    # default Nuxt layout
 │   ├── pages/                 # index.vue (Upload), viewer.vue (Viewer) — file-based routes
-│   └── services/              # csvParser.ts, csvParser.worker.ts, columnStats.ts,
+│   └── services/              # 9 files: csvParser.ts, csvParser.worker.ts,
+│                               #   columnStats.ts, columnFilters.ts, viewerSession.ts,
+│                               #   exportData.ts, exportXlsx.ts, filterLabels.ts,
 │                               #   formatFile.ts — pure, framework-free domain logic
 ├── public/                    # static assets (favicon, logo, robots.txt)
 ├── scripts/ralph.sh           # repo automation script, not part of the app runtime
@@ -39,10 +44,10 @@ Component-based Vue 3 SPA on Nuxt 4 conventions (`srcDir: app/`), organized as U
 ### Layer responsibilities
 | Layer | Owns | Does NOT own |
 | --- | --- | --- |
-| `app/services/` | Pure domain logic: CSV/TSV parsing (`csvParser.ts`), column type inference + stats (`columnStats.ts`), file-metadata formatting (`formatFile.ts`) | Vue reactivity, DOM, browser APIs (no `ref`/`computed` imports) |
-| `app/composables/` | Reactive state + orchestration: parse orchestration (`useCsvParser`), IndexedDB schema/access (`useDatabase`, `useFilesStore`, `useSettingsStore`), current dataset (`useCurrentDataset`), viewer derived state (`useViewer`), open-file workflow (`useOpenFile`), theme (`useTheme`) | Rendering/markup, direct DOM manipulation beyond `document.documentElement` (theme) |
-| `app/components/` | Presentational + domain-aware Vue SFCs (props in, events out); e.g. `ViewerTable.vue` virtualizes rows via `@tanstack/vue-virtual`, `StatsPanel.vue` renders `ColumnStats` | Persistence, parsing, business rules (delegated to composables/services) |
-| `app/pages/` | Route-level composition: `index.vue` wires `Dropzone` + `RecentFiles` + `useOpenFile`; `viewer.vue` wires `ViewerToolbar` + `ViewerTable` + `StatsPanel` + `useViewer` | Reusable UI (delegated to `components/`) |
+| `app/services/` | Pure domain logic: CSV/TSV parsing (`csvParser.ts`), column type inference + stats (`columnStats.ts`), column filter predicates (`columnFilters.ts`), session snapshot serialize/deserialize (`viewerSession.ts`), export content generators (`exportData.ts`, `exportXlsx.ts`), filter UI labels (`filterLabels.ts`), file-metadata formatting (`formatFile.ts`) | Vue reactivity, DOM, browser APIs (no `ref`/`computed` imports) |
+| `app/composables/` | Reactive state + orchestration: parse orchestration (`useCsvParser`), IndexedDB schema/access (`useDatabase`, `useFilesStore`, `useSettingsStore`, `useSessionStore`), current dataset + in-place cell mutation (`useCurrentDataset`), viewer derived state (`useViewer`), session restore/debounced write (`useViewerSession`), cell edit + undo/redo (`useCellEditing`), edited-dataset persistence (`useSaveVersion`), export modal orchestration (`useExportModal`), open-file workflow (`useOpenFile`), theme (`useTheme`) | Rendering/markup, direct DOM manipulation beyond `document.documentElement` (theme) |
+| `app/components/` | Presentational + domain-aware Vue SFCs (props in, events out); e.g. `ViewerTable.vue` virtualizes rows via `@tanstack/vue-virtual`, `StatsPanel.vue` renders `ColumnStats`, `FilterPanel.vue`/`FilterChips.vue` edit/display `ColumnFilter[]`, `ExportModal.vue` drives `useExportModal`, `CsvCell.vue` drives `useCellEditing` | Persistence, parsing, business rules (delegated to composables/services) |
+| `app/pages/` | Route-level composition: `index.vue` wires `Dropzone` + `RecentFiles` + `useOpenFile`; `viewer.vue` wires `ViewerToolbar` + `ViewerTable` + `StatsPanel` + `FilterPanel`/`FilterChips` + `ExportModal` + `useViewer` + `useViewerSession` + `useCellEditing` + `useSaveVersion` | Reusable UI (delegated to `components/`) |
 | `nuxt.config.ts` | Build/runtime config: SSR toggle, Nitro preset, Tailwind Vite plugin, global CSS, page title | Env/secrets (none declared; `env_vars: []`) |
 | `test/` | Vitest specs, one per component/composable/service | Production code |
 
@@ -51,9 +56,10 @@ None over the network. The only "external" boundary is the browser platform itse
 
 | System | Client/config | Notes |
 | --- | --- | --- |
-| IndexedDB | `idb` package via `app/composables/useDatabase.ts` (`DB_NAME='csvview'`, `DB_VERSION=1`) | Client-side persistence only, no server DB |
+| IndexedDB | `idb` package via `app/composables/useDatabase.ts` (`DB_NAME='csvview'`, `DB_VERSION=2`, stores `files`/`settings`/`sessions`) | Client-side persistence only, no server DB; `sessions` keyed by `FileRecord.id`, deleted in the same transaction as its file (`useFilesStore.ts` `deleteFile`/LRU eviction) |
 | Web Worker | `new Worker(new URL('../services/csvParser.worker.ts', import.meta.url), { type: 'module' })` (`useCsvParser.ts:32-37`) | Offloads CSV parsing; inline fallback if unavailable |
 | `localStorage` (legacy path) | `THEME_STORAGE_KEY = 'csvview:theme'` in `app/composables/useTheme.ts:17` | Superseded at read/write time by IndexedDB `settings` store (`useSettingsStore.ts`) for the same key `theme` |
+| `xlsx` (SheetJS) | Dynamic `import('xlsx')` inside `app/services/exportXlsx.ts:50` (`generateXlsx`) | Loaded only when the user picks the XLSX export format, keeping it out of the eager Upload/Viewer bundle |
 
 ### Macro flow: CSV parse via Web Worker
 ```
@@ -90,6 +96,48 @@ Dropzone.vue --select(File)--> useOpenFile.openFile()
                          |
                          v
         useCurrentDataset.setDataset() -> navigateTo('/viewer')
+```
+
+### Macro flow: Viewer session restore + debounced write
+```
+viewer.vue mounts
+        |
+        v
+useViewerSession({filters, sortKeys, hidden, widths, order, pinned}, meta)
+        |
+        v
+watch(meta, ..., {immediate:true})  -- fires on mount + every dataset swap
+        |
+   meta.value?.id === undefined? --yes--> no-op (in-memory only, RF-05)
+        | no
+        v
+useSessionStore.getSession(id)  [IndexedDB 'sessions', db.get]
+        |
+   record === undefined? --yes--> no-op, defaults stand
+        | no
+        v
+deserializeViewerSession(record, columnCount)  [app/services/viewerSession.ts]
+        |
+   record.columnCount !== columnCount? --yes--> deleteSession(id), discard (RF-06)
+        | no
+        v
+isRestoring = true; viewer.{filters,sortKeys,hidden,widths,order,pinned}.value = restored.*
+        |
+        v
+await nextTick(); isRestoring = false
+        |
+        v
+watch([viewer.filters, ...six refs], flush:'post')  -- every later mutation
+        |
+        v
+if (isRestoring) skip; else debounce 300ms (clearTimeout + setTimeout)
+        |
+        v
+serializeViewerSession(snapshot, columnCount) -> SessionPayload
+        |
+        v
+useSessionStore.saveSession({fileId:id, updated_at:Date.now(), ...payload})
+  [IndexedDB 'sessions', db.put -- failures only console.error, never throw to UI]
 ```
 
 ## Related documents

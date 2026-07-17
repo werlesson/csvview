@@ -12,7 +12,8 @@ CSV View is a 100%-client-side Nuxt 4 SPA that opens, browses, sorts, filters, a
 | --- | --- |
 | Browser (SPA runtime) | Hosts the entire app; `ssr:false` + Nitro `preset:'static'` (`nuxt.config.ts:12-15`) — no server process at runtime |
 | Web Worker (`app/services/csvParser.worker.ts`) | Runs CSV parsing off the main thread, spawned by `useCsvParser.ts` |
-| IndexedDB (browser) | Persists opened files and settings via `idb` (`app/composables/useDatabase.ts`) |
+| IndexedDB (browser) | Persists opened files, preferences, and per-file Viewer session state via `idb` — stores `files`/`settings`/`sessions`, `DB_VERSION = 2` (`app/composables/useDatabase.ts`) |
+| `xlsx` (SheetJS, dynamic `import()`) | Generates `.xlsx` workbooks on demand inside `app/services/exportXlsx.ts:50`, kept out of the eager route bundle |
 | Vitest + happy-dom + fake-indexeddb | Test harness for components, composables, and services (`test/*.spec.ts`) |
 
 No external HTTP APIs, backend services, or third-party network calls are wired (digest `api_surface.present=false`; no fetch/axios/HTTP client in `package.json`).
@@ -21,11 +22,15 @@ No external HTTP APIs, backend services, or third-party network calls are wired 
 1. User drags/drops or picks a file in `Dropzone.vue` on `app/pages/index.vue` (Upload screen); accepted extensions `.csv`, `.tsv`, `.txt` (`useOpenFile.ts:24` `ACCEPTED_EXTENSIONS`).
 2. `useOpenFile.openFile()` reads the file as text, then parses it via `useCsvParser().parseText()`, which spawns the Web Worker (`csvParser.worker.ts`) or falls back to an inline `parseCsv()` call if `Worker` construction fails (`useCsvParser.ts:50-93`).
 3. `csvParser.ts` detects the delimiter (comma/tab/semicolon, header-line-first heuristic), strips BOM, streams the parse via PapaParse in chunks (`DEFAULT_CHUNK_SIZE = 1024*1024`), and normalizes short rows to the header's column count.
-4. The parsed result is persisted to IndexedDB store `files` via `useFilesStore().saveFile()` (LRU-capped at `MAX_RECENT_FILES = 10`), then loaded into the shared `useCurrentDataset()` state.
+4. The parsed result is persisted to IndexedDB store `files` via `useFilesStore().saveFile()` (LRU-capped at `MAX_RECENT_FILES = 10`, evicting the paired `sessions` record for each evicted file), then loaded into the shared `useCurrentDataset()` state.
 5. `navigateTo('/viewer')` transitions to the Viewer screen (`useOpenFile.ts:83`, `VIEWER_ROUTE = '/viewer'`); `app/pages/viewer.vue` redirects back to `/` if no dataset is loaded (`if (!hasDataset.value) await navigateTo('/')`).
-6. `useViewer()` derives column types (`inferColumnType`), search-filtered rows, multi-key sort, column widths/pins/order — all reactive `computed`s over the in-memory dataset; `ViewerTable.vue` renders it virtualized via `@tanstack/vue-virtual` (`ROW_HEIGHT = 40`, `overscan: 12`).
-7. Selecting a column (`selectColumn`) computes `ColumnStats` via `app/services/columnStats.ts` and renders them in `StatsPanel.vue` (+ `StatsHistogram.vue` for numeric columns).
-8. Terminal state: rendered/interactive DOM in the browser; the only persisted artifact is the IndexedDB `files`/`settings` records — no data leaves the machine.
+6. `useViewer()` derives column types (`inferColumnType`), search+filter-matched rows (`matchesFilters`, `app/services/columnFilters.ts`), multi-key sort, column widths/pins/order — all reactive `computed`s over the in-memory dataset; `ViewerTable.vue` renders it virtualized via `@tanstack/vue-virtual` (`ROW_HEIGHT = 40`, `overscan: 12`).
+7. `useViewerSession()` restores any persisted `SessionRecord` for the loaded file's `id` on mount/dataset-change and writes it back debounced (300 ms default) on every filter/sort/hidden/width/order/pinned mutation (`app/composables/useViewerSession.ts`); a `columnCount` mismatch discards the record instead of applying stale indexes.
+8. Selecting a column (`selectColumn`) computes `ColumnStats` via `app/services/columnStats.ts` and renders them in `StatsPanel.vue` (+ `StatsHistogram.vue` for numeric columns).
+9. Double-clicking a cell (`CsvCell.vue`) opens `useCellEditing().beginEdit()`; `confirmEdit()` validates the new value against the column's inferred type before mutating `dataset.value` in place via `useCurrentDataset().updateCell()`, pushing one entry onto an in-memory undo stack (`app/composables/useCellEditing.ts`).
+10. `useSaveVersion()` persists edits either as a new `files` record (`saveNewVersion()`, never reuses the original `id`) or by overwriting the original record's `content` (`overwriteOriginal()`), both via `stringifyDataset()`/`useFilesStore()` (`app/composables/useSaveVersion.ts`).
+11. `useExportModal().download()` projects `displayColumns` over the filtered-or-all row scope and serializes to CSV/JSON/Markdown/SQL (`app/services/exportData.ts`) or XLSX (`app/services/exportXlsx.ts`, dynamic-imported `xlsx`), then triggers a client-side `Blob` download — no network round-trip.
+12. Terminal state: rendered/interactive DOM in the browser; persisted artifacts are the IndexedDB `files`/`settings`/`sessions` records or a downloaded export file — no data leaves the machine.
 
 ### Out of scope
 - Server-side rendering / API routes — `ssr: false`, no `server/` directory, no `api_surface` evidence (digest `api_surface.present=false`).
@@ -35,5 +40,5 @@ No external HTTP APIs, backend services, or third-party network calls are wired 
 ## Related documents
 
 - [`architecture.md`](architecture.md) — directory layout and layer responsibilities
-- [`domain_rules.md`](domain_rules.md) — parsing, type inference, and sorting rules
-- [`data_model.md`](data_model.md) — IndexedDB `files`/`settings` stores
+- [`domain_rules.md`](domain_rules.md) — parsing, filtering, sorting, session, and cell-editing rules
+- [`data_model.md`](data_model.md) — IndexedDB `files`/`settings`/`sessions` stores

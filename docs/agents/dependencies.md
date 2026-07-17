@@ -13,8 +13,9 @@ None. Single-package repo, no `workspaces` field in `package.json`, no private/f
 ### Shared infrastructure
 | Infrastructure | Role | Source |
 | --- | --- | --- |
-| IndexedDB (`idb ^8.0.3`) | Client-side persistence for opened files (`files` store) and preferences (`settings` store) | `app/composables/useDatabase.ts` |
+| IndexedDB (`idb ^8.0.3`) | Client-side persistence for opened files (`files` store), preferences (`settings` store), and per-file Viewer session state (`sessions` store, `DB_VERSION = 2`) | `app/composables/useDatabase.ts` |
 | Web Worker (native, no package) | Offloads CSV parsing off the main thread | `app/services/csvParser.worker.ts`, `app/composables/useCsvParser.ts` |
+| `xlsx` (SheetJS, dynamic import) | Generates `.xlsx` binaries client-side, on demand, for the export modal | `app/services/exportXlsx.ts` |
 
 No queues, caches, or observability tooling referenced in code or config.
 
@@ -25,8 +26,9 @@ No queues, caches, or observability tooling referenced in code or config.
 | vue | `^3.5.39` | UI framework (Composition API) |
 | vue-router | `^5.1.0` | Client routing between `/` and `/viewer` |
 | papaparse | `^5.5.4` | CSV/TSV streaming parse engine (`app/services/csvParser.ts`) |
-| idb | `^8.0.3` | Typed Promise wrapper over IndexedDB (`app/composables/useDatabase.ts`) |
+| idb | `^8.0.3` | Typed Promise wrapper over IndexedDB (`app/composables/useDatabase.ts`), including the `sessions` store |
 | @tanstack/vue-virtual | `^3.13.32` | Row virtualization for large CSV tables (`ViewerTable.vue`) |
+| xlsx | `^0.18.5` | XLSX workbook generation (SheetJS), dynamic-imported inside `app/services/exportXlsx.ts:50` to keep it out of the eager bundle |
 | @fontsource-variable/geist | `^5.2.9` | Self-hosted variable font |
 | @fontsource-variable/geist-mono | `^5.2.8` | Self-hosted monospace variable font |
 

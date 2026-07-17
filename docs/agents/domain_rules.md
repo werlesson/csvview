@@ -8,9 +8,14 @@
 - Delimiter detection and CSV/TSV parsing with row normalization (`app/services/csvParser.ts`).
 - Per-column type inference with a fixed precedence order, plus null/unique/duplicate/numeric statistics (`app/services/columnStats.ts`).
 - Type-aware, direction-aware, empty-last sort comparator shared by single-click and Shift-click multi-key sorting (`app/services/columnStats.ts`, `app/composables/useViewer.ts`).
-- Recent-files LRU eviction and reopen/"touch" semantics over IndexedDB (`app/composables/useFilesStore.ts`).
+- Column filter model: per-type operator families, inert-filter detection, AND-combined row matching (`app/services/columnFilters.ts`).
+- Recent-files LRU eviction and reopen/"touch" semantics over IndexedDB, including cascading deletion of the paired session record (`app/composables/useFilesStore.ts`).
 - Column layout rules: pin-group clamped reordering, per-column width with a floor, visibility independent of search/stats (`app/composables/useViewer.ts`).
 - Open-file workflow: extension allowlist, parse → persist → load → navigate, with distinct error paths for invalid type vs. parse failure (`app/composables/useOpenFile.ts`).
+- Viewer session restore + debounced persistence, keyed by file id, discarded wholesale on a column-count mismatch (`app/composables/useViewerSession.ts`, `app/services/viewerSession.ts`).
+- Inline cell editing: type-validated confirm, per-dataset undo/redo stack, reset on dataset switch (`app/composables/useCellEditing.ts`).
+- Edited-dataset persistence: "save as new version" vs. "overwrite original", both re-serializing the in-memory dataset (`app/composables/useSaveVersion.ts`).
+- Export content generation per format (CSV/JSON/Markdown/SQL/XLSX), always projected through the Viewer's visible/ordered columns (`app/services/exportData.ts`, `app/services/exportXlsx.ts`).
 
 ### Delimiter detection
 Implementing file: `app/services/csvParser.ts` (`detectDelimiter`, `detectFromContent`, `pickByCounts`).
@@ -40,6 +45,7 @@ Implementing file: `app/services/csvParser.ts` (`parseCsv`, `normalizeRow`).
 - Empty/whitespace-only content rejects with `CsvParseError('O arquivo está vazio.')` before PapaParse even runs.
 - Zero data rows after parsing (e.g. only blank lines, filtered by `skipEmptyLines: 'greedy'`) rejects with `CsvParseError('O arquivo não contém nenhuma linha.')`.
 - Parsing streams via PapaParse `chunk()` callback (`chunkSize` default `1024*1024` bytes) and reports `onProgress(cursor/totalBytes)` per chunk, `onProgress(1)` on completion.
+- `stringifyDataset(dataset, delimiter)` is the inverse serializer, consumed by `useSaveVersion.ts` to turn an in-memory (possibly edited) `Dataset` back into raw file content for persistence.
 
 ### Column type inference
 Implementing file: `app/services/columnStats.ts` (`inferColumnType`).
@@ -55,7 +61,7 @@ Single O(N) pass per column; empty cells (`isEmptyCell`: `null`/`undefined`/whit
 | 5 | `url` | `URL_RE` | Only `http://`/`https://` schemes |
 | 6 (fallback) | `text` | — | Also the type when the column has no filled cells |
 
-To extend: insert a new `allX` flag + recognizer function in `inferColumnType`'s loop at the desired precedence position, and add the corresponding branch to the final `if` chain.
+To extend: insert a new `allX` flag + recognizer function in `inferColumnType`'s loop at the desired precedence position, and add the corresponding branch to the final `if` chain. `columnFilters.ts:62-67` (`typeFamily`) already anticipates a `boolean` `ColumnType` value with its own operator family, gated behind whether `inferColumnType` ever produces it.
 
 ### Numeric statistics and histogram
 Implementing file: `app/services/columnStats.ts` (`computeNumericStats`, `buildHistogram`, `histogramBinCount`).
@@ -71,6 +77,7 @@ Implementing file: `app/services/columnStats.ts` (`makeComparator`, `compareFill
 - Empty cells (`isEmptyCell`) always sort to the end, in **both** `asc` and `desc` directions — direction only inverts the order among filled cells.
 - `number` compares by parsed numeric value; `date` compares by `parseDate` timestamp (ambiguous `DD..MM..YYYY` is always read as day/month/year — no per-column majority detection); `text` (and any value that fails to parse for its column's type) falls back to `localeCompare`.
 - Ties return `0`, relying on `Array.prototype.sort`'s stability (V8) to preserve prior order — this is what makes multi-key sort additive rather than a full re-sort.
+- `sortedRows` (`useViewer.ts:232-250`) is computed synchronously from `filteredRows` — filters and search are applied before sort, so sorting never sees a row excluded by an active filter.
 
 ### Sort interaction cycle (single-click vs. Shift-click)
 Implementing file: `app/composables/useViewer.ts` (`sortColumn`, `sortColumnAdditive`).
@@ -86,19 +93,32 @@ Implementing file: `app/composables/useViewer.ts` (`sortColumn`, `sortColumnAddi
 
 To extend: both functions only ever replace `sortKeys.value` wholesale — new interaction modes can be added as new exported functions operating on the same `SortKey[]` shape without touching `sortedRows`.
 
-### Column pin/reorder rule
-Implementing file: `app/composables/useViewer.ts` (`reorderColumn`, `displayColumns`, `pinColumn`/`unpinColumn`).
+### Column filters (operator families, inert detection, AND matching)
+Implementing file: `app/services/columnFilters.ts` (`typeFamily`, `operatorsForFamily`, `isFilterInert`, `matchesFilters`); labels in `app/services/filterLabels.ts`.
 
-- `displayColumns` = pinned columns (in pin-insertion order) followed by unpinned visible columns (in `order`, defaulting to header identity order).
-- `reorderColumn(from, to)` operates on positions within `displayColumns`; a drag target outside the dragged column's own group (pinned vs. unpinned) is clamped to that group's boundary — dragging never crosses from the pinned group into the unpinned group or vice versa.
-- Column width (`resizeColumn`) is clamped to a floor of `MIN_COLUMN_WIDTH = 48` px with no ceiling; unset columns default to `DEFAULT_COLUMN_WIDTH = 180` px. Width/order/pin state is tracked by the column's **original** header index, so it survives hide/show and reordering.
+- A `ColumnFilter` (`{ column, operator, value? }`) targets a column by **original** index, independent of visibility — hidden columns can still be filtered.
+- The inferred `ColumnType` maps to one of four operator families (`typeFamily`); `text`/`email`/`url` all degrade to `texto`. `boolean` is reachable only if `inferColumnType` ever emits it (it currently does not, per the type-inference precedence table above) — a documented graceful-degradation gap.
+
+| Type family | Operators (`FilterOperator`) |
+| --- | --- |
+| `texto` | `igual`, `diferente`, `contem`, `naoContem`, `vazio`, `preenchido` |
+| `numero` | `igual`, `diferente`, `maiorQue`, `menorQue`, `entre`, `vazio`, `preenchido` |
+| `data` | `igual`, `diferente`, `intervaloDatas`, `vazio`, `preenchido` |
+| `booleano` | `verdadeiro`, `falso`, `vazio`, `preenchido` |
+
+- Valueless operators (`vazio`, `preenchido`, `verdadeiro`, `falso`) are **never** inert. Value-bearing operators are inert (ignored) when their value is missing/empty; `entre`/`intervaloDatas` require both `from` and `to` non-empty (`isFilterInert`).
+- `matchesFilters(filters, row, columnTypes)` combines all non-inert filters with **AND**: a row must satisfy every active filter to pass. `igual`/`diferente` compare numerically for the `numero` family and case-insensitively (trim + lowercase) for text; `contem`/`naoContem` are case-insensitive substring checks; `entre`/`intervaloDatas` are inclusive-range checks reusing `parseNumber`/`parseDate` from `columnStats.ts`.
+- `useViewer.filteredRows` (`useViewer.ts:202-219`) applies the search term and `matchesFilters` in a single O(N) pass over `dataset.rows`; `activeFilters` pre-strips inert filters so `matchesFilters` never re-checks inertness per row inside the hot loop.
+- To extend: add a new `FilterOperator` literal, an entry in `OPERATORS_BY_FAMILY`, a `case` in `evaluateOperator`, and (if valueless) add it to `VALUELESS_OPERATORS` — `isFilterInert`/`matchesFilters` require no other change.
 
 ### Recent-files LRU eviction and reopen
-Implementing file: `app/composables/useFilesStore.ts` (`saveFile`, `touchFile`, `MAX_RECENT_FILES = 10`).
+Implementing file: `app/composables/useFilesStore.ts` (`saveFile`, `touchFile`, `deleteFile`, `MAX_RECENT_FILES = 10`).
 
-- `saveFile()` adds a record, then — inside the same transaction — walks the `last_opened_at` index in ascending (oldest-first) order via cursor, deleting records while `count() - MAX_RECENT_FILES > 0`.
+- `saveFile()` adds a record, then — inside the same `['files','sessions']` transaction — walks the `last_opened_at` index in ascending (oldest-first) order via cursor, deleting the file record **and** its paired `sessions` record (by the same `id`/`fileId`) while `count() - MAX_RECENT_FILES > 0`, so no orphaned session survives an evicted file.
+- `deleteFile(id)` deletes the `files` and `sessions` records for `id` in one transaction, same invariant.
 - `listFiles()` returns records newest-first by reversing the ascending index read.
 - `touchFile(id)` rewrites `last_opened_at` to "now" (or a supplied timestamp), which is how `useOpenFile.reopenRecent()` moves a reopened file back to the top of the recents list without re-saving its content.
+- `overwriteFile(id, patch)` (used by `useSaveVersion.overwriteOriginal()`) replaces `content`/`delimiter`/`size_bytes`/`row_count`/`column_count` and bumps `last_opened_at`, while preserving `id`/`created_at`; returns `undefined` without throwing when `id` does not exist.
 
 ### Open-file workflow error paths
 Implementing file: `app/composables/useOpenFile.ts` (`openFile`, `reopenRecent`, `hasAcceptedExtension`).
@@ -113,8 +133,72 @@ Implementing file: `app/composables/useOpenFile.ts` (`openFile`, `reopenRecent`,
 
 Both paths share `isOpening`/`progress` refs and reset `error` to `null` at the start of each call.
 
+### Viewer session restore and debounced persistence
+Implementing file: `app/composables/useViewerSession.ts` (persistence orchestration); `app/services/viewerSession.ts` (`serializeViewerSession`, `deserializeViewerSession`); store in `app/composables/useSessionStore.ts`.
+
+- The persisted `SessionRecord` covers exactly six aspects of `useViewer()` state: `filters`, `sortKeys`, `hidden`, `widths`, `order`, `pinned` — always referenced by the column's **original** index, never the rendered position.
+- No `meta.value?.id` (dataset not yet persisted, e.g. a fresh upload) → no read, no write; the Viewer stays functional in memory only. A mutation made before `id` becomes defined is **not** retroactively saved once it does — `persist()` re-reads `meta.value` at fire time, not at mutation time.
+- Restore fires on mount and on every dataset swap (`watch(meta, ..., { immediate: true })`). No record for the file → defaults stand (no-op).
+- **Schema mismatch rule**: if `record.columnCount !== current.columnCount`, `deserializeViewerSession` returns `null` and the **entire** record is discarded (`deleteSession(id)`) — no partial application of stale column indexes, even if some would still be in range.
+- With a matching `columnCount`, each of the six fields is still sanitized independently (defense in depth): indexes outside `[0, columnCount)` are dropped, malformed/non-array fields degrade to empty — `deserializeViewerSession` never throws.
+- Writes are debounced 300 ms (`DEFAULT_DEBOUNCE_MS`) via `setTimeout`/`clearTimeout`, coalescing rapid mutations (e.g. a resize drag) into one `db.put`. A restoration-triggered mutation is suppressed from re-triggering a write via an `isRestoring` flag cleared after `nextTick()`.
+- `serializeViewerSession` round-trips `filters`/`sortKeys` through `JSON.parse(JSON.stringify(...))` before `db.put`, because IndexedDB's `structuredClone` throws `DataCloneError` on Vue reactive Proxy objects — plain-object copies are required for a successful write.
+- Write failures (`saveSession`/`deleteSession` rejecting) are caught and only `console.error`-logged — never surfaced to the UI or thrown, so a quota/IndexedDB failure never blocks editing.
+
+### Inline cell editing: validation and undo/redo
+Implementing file: `app/composables/useCellEditing.ts` (`beginEdit`, `confirmEdit`, `cancelEdit`, `undo`, `redo`, `isDirty`); mutation via `useCurrentDataset.updateCell`.
+
+| Action | Precondition | Effect |
+| --- | --- | --- |
+| `beginEdit(rowIndex, columnIndex)` | Row exists, `columnIndex` in bounds | `editingCell` set to `{ rowIndex, columnIndex, value }`; out-of-bounds is a silent no-op |
+| `confirmEdit(value)` | No cell in edit, or dataset empty | Returns `false`, no state change |
+| `confirmEdit(value)` | `value` fails `isValidForType(inferColumnType(...), value)` | `validationError` set to `Valor inválido para o tipo "<type>" desta coluna.`; dataset **not** mutated; `editingCell` retained (lets the user correct); returns `false` |
+| `confirmEdit(value)` | `value` valid | `updateCell()` mutates in place; exactly 1 entry pushed to `undoStack`; `redoStack` cleared; `editingCell`/`validationError` reset; returns `true` |
+| `undo()` | `undoStack` non-empty | Pops the last entry, restores `previousValue` via `updateCell`, pushes the entry onto `redoStack` |
+| `undo()` | `undoStack` empty | No-op |
+| `redo()` | `redoStack` non-empty | Pops the last entry, restores `nextValue` via `updateCell`, pushes the entry onto `undoStack` |
+
+- `inferColumnType` is recomputed fresh on every `confirmEdit` call — never cached across edits — so validation always reflects the column's current mix of values, including any prior edits in the same session.
+- Empty-cell values are always valid for any type (mirrors `isEmptyCell` never invalidating a type in `inferColumnType`).
+- `undoStack`/`redoStack`/`editingCell`/`validationError` are module-scope state, reset via a `flush: 'sync'` watcher on `useCurrentDataset().meta.value?.id` — switching datasets (including from an unpersisted upload to a persisted one) always clears both stacks, so undo never crosses a dataset boundary.
+- `isDirty(rowIndex, columnIndex)` scans `undoStack` for any entry at that cell — used to render a "dirty" indicator; it does not consult `redoStack`, so a fully undone cell reports not-dirty even if `redoStack` could restore it.
+
+### Edited-dataset persistence: new version vs. overwrite
+Implementing file: `app/composables/useSaveVersion.ts` (`saveNewVersion`, `overwriteOriginal`); serialization via `stringifyDataset` (`csvParser.ts`).
+
+| Action | Precondition | Result |
+| --- | --- | --- |
+| `saveNewVersion()` | No dataset/meta loaded | `error` = `'Nenhum dataset carregado para salvar.'`, returns `false` |
+| `saveNewVersion()` | Dataset loaded | Serializes via `stringifyDataset`, calls `useFilesStore().saveFile()` with a **fresh** record — never reuses `meta.value.id` — subject to the same LRU cap as any new file; no export/download is triggered; returns `true` |
+| `overwriteOriginal()` | No dataset/meta loaded | `error` = `'Nenhum dataset carregado para sobrescrever.'`, returns `false` |
+| `overwriteOriginal()` | `meta.value.id === undefined` (never persisted) | `error` = `'Este dataset ainda não foi persistido; use "Salvar nova versão".'`, returns `false` |
+| `overwriteOriginal()` | `id` defined but record missing in `files` | `error` = `'Arquivo original não encontrado para sobrescrever.'`, returns `false` |
+| `overwriteOriginal()` | `id` defined, record exists | `overwriteFile(id, patch)` replaces `content`/metadata, preserves `id`/`created_at`, bumps `last_opened_at`; returns `true` |
+
+- Both actions share `isBusy`/`error` refs, reset `error` at the start of each call, and never mutate/clear the in-memory dataset on failure — a write error leaves the user's edits intact for a retry.
+- Failures are logged (`console.error`) in addition to populating `error`.
+
+### Export scope, projection, and per-format generation
+Implementing files: `app/composables/useExportModal.ts` (orchestration); `app/services/exportData.ts` (CSV/JSON/Markdown/SQL); `app/services/exportXlsx.ts` (XLSX).
+
+- Row scope is always `filteredRows` (search + filters applied, `scope: 'filtered'`, the default) or `allRows` (`dataset.rows`, unfiltered) — **never** `sortedRows`; the export's row order is the dataset's natural order regardless of any active column sort in the Viewer.
+- Columns are always projected from `displayColumns` (`useViewer`'s final visible+pinned+reordered list) via `projectColumns(rows, columns.map(c => c.index))` — a hidden column never appears in an export, and a pinned/reordered column appears in its display position, not its original header position.
+- Per-format option gating (`OPTIONS_ENABLED_BY_FORMAT`): `includeHeader` applies to CSV/XLSX/SQL only (JSON/Markdown always emit their own structural header); `quoteAll` (force-quote every CSV field) applies to CSV only.
+
+| Format | Empty cell becomes | Notes |
+| --- | --- | --- |
+| CSV | empty field between delimiters | RFC 4180 quoting: forced by `quoteAll`, or only when the field contains `,`/`"`/newline; `\r\n` line endings |
+| JSON | `null` | Array of objects keyed by header label; all filled values stay strings (no numeric/boolean coercion) |
+| Markdown | blank table cell | GFM table; header + separator row always present; `\|` escaped, newlines replaced with a space |
+| SQL | `NULL` (unquoted literal) | One `INSERT INTO <table> (...) VALUES (...);` per row; table name via `deriveTableName(fileName)` (strips extension, non-`[A-Za-z0-9_]` → `_`, collapses repeats, prefixes `_` if it would start with a digit or be empty) |
+| XLSX | empty cell (no placeholder) | `xlsx` (SheetJS) dynamic-imported inside `generateXlsx`; truncates data rows at `MAX_XLSX_ROWS = 1_048_576` total rows (data + header) and sets `truncated: true` instead of throwing or splitting into multiple sheets |
+
+- `useExportModal.download()` resets `xlsxWarning`/`downloadError` on every call; a generation/download failure (including the dynamic `import('xlsx')` failing) sets `downloadError` to a per-format Portuguese message and never throws to the caller.
+- `resetSelection()` restores `format: 'csv'`, `scope: 'filtered'`, `includeHeader: true`, `quoteAll: false`, and clears both warning/error refs — called on every modal dismiss, so reopening the modal never carries over a prior format/warning.
+
 ## Related documents
 
 - [`project_overview.md`](project_overview.md) — system purpose and macro flow this domain logic serves
-- [`architecture.md`](architecture.md) — service/composable layer boundaries and the Web Worker flow
+- [`architecture.md`](architecture.md) — service/composable layer boundaries, Web Worker flow, and session restore/write flow
 - [`api_contracts.md`](api_contracts.md) — the Worker message contract that carries `ParseResult`
+- [`data_model.md`](data_model.md) — the `files`/`settings`/`sessions` IndexedDB records these rules read and write

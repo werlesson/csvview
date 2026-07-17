@@ -14,7 +14,7 @@ The only asynchronous message contract in the repository is client-side, between
 
 Channel: `Worker` instance created by `useCsvParser.ts:32-37` from `app/services/csvParser.worker.ts` (`type: 'module'`). No queue/broker/topic; messages are `postMessage`/`onmessage` pairs scoped to one Worker instance per parse call.
 
-Request (`ParseRequest`, `app/services/csvParser.ts:277-284`), posted by `useCsvParser.ts:91`:
+Request (`ParseRequest`, `app/services/csvParser.ts:310-317`), posted by `useCsvParser.ts:91`:
 ```json
 {
   "content": "id,name,amount\n1,Ana,120.50\n2,Bruno,89.90\n",
@@ -23,7 +23,7 @@ Request (`ParseRequest`, `app/services/csvParser.ts:277-284`), posted by `useCsv
 }
 ```
 
-Responses (`ParseWorkerMessage` union, `app/services/csvParser.ts:287-290`), one or more `progress` messages followed by exactly one terminal `result` or `error`:
+Responses (`ParseWorkerMessage` union, `app/services/csvParser.ts:320-323`), one or more `progress` messages followed by exactly one terminal `result` or `error`:
 ```json
 { "type": "progress", "progress": 0.42 }
 ```

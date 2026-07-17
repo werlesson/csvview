@@ -4,29 +4,29 @@
 
 ## AS IS — Current state
 
-Persistence is entirely client-side IndexedDB (browser storage), opened/owned by `app/composables/useDatabase.ts`. There is no server database, no migrations, no ORM, no `*.sql`/`schema.prisma` files (digest `persistence.present=true`, evidence limited to `useDatabase.ts`/`useFilesStore.ts`/`useSettingsStore.ts`).
+Persistence is entirely client-side IndexedDB (browser storage), opened/owned by `app/composables/useDatabase.ts`. There is no server database, no migrations, no ORM, no `*.sql`/`schema.prisma` files (digest `persistence.present=true`, evidence in `useDatabase.ts`/`useFilesStore.ts`/`useSettingsStore.ts`/`useSessionStore.ts`).
 
 ### Entities
 
 #### `FileRecord` (object store `files`)
-Defined in `app/composables/useDatabase.ts:38-57`. Key path `id` (auto-increment). Index `last_opened_at` (`LAST_OPENED_INDEX`, `useDatabase.ts:32,102`) orders the recent-files list.
+Defined in `app/composables/useDatabase.ts:43-62`. Key path `id` (auto-increment). Index `last_opened_at` (`LAST_OPENED_INDEX`, `useDatabase.ts:37,146`) orders the recent-files list.
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
 | `id` | `number` | Auto-increment primary key |
 | `name` | `string` | Original file name |
 | `delimiter` | `string` | Inferred delimiter: `comma` \| `tab` \| `semicolon` |
-| `size_bytes` | `number` | Original content size in bytes |
+| `size_bytes` | `number` | Content size in bytes (original, or re-serialized length after a save/overwrite) |
 | `row_count` | `number` | Data row count (header excluded) |
 | `column_count` | `number` | Header column count |
 | `content` | `string` | Raw file content, re-parsed on reopen |
 | `created_at` | `number` | Epoch ms, first opened |
-| `last_opened_at` | `number` | Epoch ms, last reopen — drives LRU ordering |
+| `last_opened_at` | `number` | Epoch ms, last reopen/overwrite — drives LRU ordering |
 
-Invariant: at most `MAX_RECENT_FILES = 10` records kept (`app/composables/useFilesStore.ts:18`). `saveFile()` evicts the oldest-by-`last_opened_at` record(s) via cursor walk over the `last_opened_at` index whenever the store exceeds the cap (`useFilesStore.ts:64-70`). `touchFile()` updates `last_opened_at` to move a record back to the top on reopen (`useFilesStore.ts:103-118`).
+Invariant: at most `MAX_RECENT_FILES = 10` records kept (`app/composables/useFilesStore.ts:19`). `saveFile()` evicts the oldest-by-`last_opened_at` record(s) via cursor walk over the `last_opened_at` index whenever the store exceeds the cap (`useFilesStore.ts:67-75`), deleting the paired `SessionRecord` for each evicted `id` in the same `['files','sessions']` transaction. `touchFile()` updates `last_opened_at` to move a record back to the top on reopen (`useFilesStore.ts:114-129`). `overwriteFile(id, patch)` replaces `content`/`delimiter`/`size_bytes`/`row_count`/`column_count` in place, preserving `id`/`created_at` (`useFilesStore.ts:137-167`, consumed by `useSaveVersion.overwriteOriginal()`).
 
 #### `SettingRecord` (object store `settings`)
-Defined in `app/composables/useDatabase.ts:60-67`. Key path `key`.
+Defined in `app/composables/useDatabase.ts:65-72`. Key path `key`.
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
@@ -36,17 +36,50 @@ Defined in `app/composables/useDatabase.ts:60-67`. Key path `key`.
 
 Invariant: reading a key with no persisted record falls back to a caller-supplied fallback, else `SETTINGS_DEFAULTS[key]` (currently only `theme` → `DEFAULT_THEME = 'dark'`), else `undefined` (`useSettingsStore.ts:33-41`).
 
+#### `SessionRecord` (object store `sessions`)
+Defined in `app/composables/useDatabase.ts:87-106`. Key path `fileId` (= the associated `FileRecord.id`, no auto-increment). All column indexes are the dataset's **original** header indexes, never the rendered/display position.
+
+| Attribute | Type | Notes |
+| --- | --- | --- |
+| `fileId` | `number` | Primary key; foreign reference to `FileRecord.id` |
+| `columnCount` | `number` | `FileRecord.column_count` at write time — compared against the current dataset on restore (RF-06 in `domain_rules.md`); a mismatch discards the whole record |
+| `filters` | `ColumnFilter[]` | Active column filters (`app/services/columnFilters.ts`), JSON round-tripped before write to avoid `structuredClone` on Vue Proxy objects |
+| `sortKeys` | `SessionSortKey[]` | `{ index, direction }` pairs, priority order = array order |
+| `hidden` | `number[]` | Hidden column indexes (serialized `Set`) |
+| `widths` | `[number, number][]` | `[columnIndex, widthPx]` pairs (serialized `Map`) |
+| `order` | `number[]` | Display order of unpinned columns, as original indexes |
+| `pinned` | `number[]` | Pinned column indexes, in pin-insertion order (serialized `Set`) |
+| `updated_at` | `number` | Epoch ms of last write |
+
+Invariant: created/updated only via `useSessionStore().saveSession()` (`db.put`, upsert semantics — `app/composables/useSessionStore.ts:22-25`), read via `getSession(fileId)`, deleted via `deleteSession(fileId)` — both explicitly (schema mismatch on restore) and implicitly (cascading delete alongside its `FileRecord`, LRU eviction or `deleteFile`). Writes are debounced 300 ms in `useViewerSession.ts` and never block or throw to the UI on failure (only `console.error`).
+
+Example `SessionRecord` shape (`test/useSessionStore.spec.ts`-style fixture):
+```json
+{
+  "fileId": 3,
+  "columnCount": 4,
+  "filters": [{ "column": 1, "operator": "maiorQue", "value": 100 }],
+  "sortKeys": [{ "index": 0, "direction": "asc" }],
+  "hidden": [2],
+  "widths": [[0, 220], [3, 96]],
+  "order": [0, 1, 2, 3],
+  "pinned": [0],
+  "updated_at": 1752624000000
+}
+```
+
 ### Storage
 - Engine: browser IndexedDB, accessed via the `idb` Promise wrapper (`idb ^8.0.3`).
-- Schema location: `app/composables/useDatabase.ts` — `DB_NAME = 'csvview'`, `DB_VERSION = 1`, stores created in the `upgrade()` callback of `openDB()` (`useDatabase.ts:93-111`).
-- Migration tool: none — schema changes require bumping `DB_VERSION` and extending the `upgrade()` callback; no migration framework or files present.
-- Connection lifecycle: module-level singleton `dbPromise` (`useDatabase.ts:86`); `closeDatabase()`/`deleteDatabase()` exist to reset it, used by tests to isolate cases (`useDatabase.ts:118-133`).
+- Schema location: `app/composables/useDatabase.ts` — `DB_NAME = 'csvview'`, `DB_VERSION = 2`, stores (`files`, `settings`, `sessions`) created idempotently in the `upgrade()` callback of `openDB()` (`useDatabase.ts:137-158`, each store gated by `db.objectStoreNames.contains(...)`).
+- Migration tool: none — schema changes require bumping `DB_VERSION` and extending the `upgrade()` callback; no migration framework or files present. The `sessions` store's introduction (bump from `DB_VERSION = 1` to `2`) is the only schema change observed in the codebase to date.
+- Connection lifecycle: module-level singleton `dbPromise` (`useDatabase.ts:129`); `closeDatabase()`/`deleteDatabase()` exist to reset it, used by tests to isolate cases (`useDatabase.ts:165-180`).
 
 ### Cache
-- `useCurrentDataset.ts:36-37` holds the currently loaded `Dataset`/`DatasetMeta` as module-scope `ref`s — an in-memory (non-persisted) cache that survives navigation between Upload and Viewer without re-parsing, cleared via `clearDataset()`.
-- `useViewer.ts` holds session-only view state (search term, hidden columns, sort keys, column widths/order/pins) as `ref`s scoped to each `useViewer()` call — explicitly never written to IndexedDB ("Estado apenas em memória de sessão — nada é gravado em IndexedDB", `useViewer.ts:76-100`).
+- `useCurrentDataset.ts:36-37` holds the currently loaded `Dataset`/`DatasetMeta` as module-scope `ref`s — an in-memory (non-persisted) cache that survives navigation between Upload and Viewer without re-parsing, cleared via `clearDataset()`. `updateCell()` mutates `dataset.value.rows[rowIndex][columnIndex]` in place (`useCurrentDataset.ts:59-65`), the substrate `useCellEditing.ts` writes through.
+- `useViewer.ts` holds session-only view state (search term, hidden columns, sort keys, column widths/order/pins, column filters) as `ref`s scoped to each `useViewer()` call; six of those refs (`filters`, `sortKeys`, `hidden`, `widths`, `order`, `pinned`) are the ones `useViewerSession.ts` mirrors into the `sessions` store — the composable itself still does no IndexedDB I/O (no `idb`/`useDatabase` import in `useViewer.ts`).
+- `useCellEditing.ts:50-53` holds the undo/redo stacks (`undoStack`, `redoStack`) as module-scope `ref`s — in-memory only, reset on dataset switch, never persisted to IndexedDB.
 
 ## Related documents
 
-- [`architecture.md`](architecture.md) — where `useDatabase`/`useFilesStore` sit in the composable layer
-- [`domain_rules.md`](domain_rules.md) — LRU eviction and settings-default rules in behavioral detail
+- [`architecture.md`](architecture.md) — where `useDatabase`/`useFilesStore`/`useSessionStore` sit in the composable layer, and the session restore/write flow
+- [`domain_rules.md`](domain_rules.md) — LRU eviction, session restore/discard, and settings-default rules in behavioral detail
