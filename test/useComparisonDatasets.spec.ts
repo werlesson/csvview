@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deleteDatabase } from '~/composables/useDatabase'
 import { useFilesStore, type NewFile } from '~/composables/useFilesStore'
 import { useCurrentDataset, type DatasetMeta } from '~/composables/useCurrentDataset'
+import { useOpenFile } from '~/composables/useOpenFile'
 import {
   useComparisonDatasets,
   MAX_COMPARISON_SIZE_BYTES,
@@ -241,6 +242,120 @@ describe('useComparisonDatasets', () => {
       await openFileB(file)
 
       expect(availableKeyColumns.value).toEqual(['id'])
+    })
+  })
+
+  // T08 — cenários de integração cross-cutting: atravessam mais de uma task
+  // (T02 + fluxo real de T01/useOpenFile), não duplicando os testes unitários
+  // já cobertos acima nem em test/diffDatasets.spec.ts.
+  describe('T08: integração cross-cutting', () => {
+    it('fluxo real fim a fim: A → B (upload) → trocar A por um terceiro arquivo real limpa B automaticamente', async () => {
+      // id bem fora da faixa do auto-incremento real de `files` (que começa em
+      // 1 a cada banco recém-criado), para garantir que o `id` observado pelo
+      // watch realmente muda quando o terceiro arquivo é persistido abaixo.
+      loadDatasetA({ id: 999 })
+
+      const { openFileB, datasetB, metaB, keyColumn } = useComparisonDatasets({ parser })
+      const fileB = new File(['id,name\n1,Zoe\n2,Yan'], 'people-b.csv')
+      expect(await openFileB(fileB)).toBe(true)
+      keyColumn.value = 'id'
+      expect(datasetB.value).not.toBeNull()
+      expect(metaB.value).not.toBeNull()
+
+      // Terceiro arquivo como novo A: fluxo real e não mockado de useOpenFile —
+      // mesmo parser (com fallback inline)/filesStore/currentDataset usados na
+      // tela de Upload, não o parser determinístico injetado acima para B.
+      const { openFile } = useOpenFile()
+      const thirdFile = new File(['id,name\n9,Nova'], 'people-c.csv')
+      const ok = await openFile(thirdFile)
+      expect(ok).toBe(true)
+
+      expect(useCurrentDataset().meta.value?.id).not.toBe(999)
+      expect(datasetB.value).toBeNull()
+      expect(metaB.value).toBeNull()
+      expect(keyColumn.value).toBeNull()
+    })
+
+    it('RNF-01: openFileB e reopenRecentB rejeitam o teto com a mesma mensagem de erro', async () => {
+      loadDatasetA()
+      const filesStore = useFilesStore()
+      const id = await filesStore.saveFile(
+        makeStored({ size_bytes: MAX_COMPARISON_SIZE_BYTES + 1 }),
+      )
+
+      const viaUpload = useComparisonDatasets({ parser, filesStore })
+      const bigFile = new File(['id,name\n1,Zoe'], 'big.csv')
+      Object.defineProperty(bigFile, 'size', { value: MAX_COMPARISON_SIZE_BYTES + 1 })
+      expect(await viaUpload.openFileB(bigFile)).toBe(false)
+      const messageFromUpload = viaUpload.comparisonError.value
+      expect(messageFromUpload).not.toBeNull()
+      viaUpload.clearComparison()
+
+      const viaRecent = useComparisonDatasets({ parser, filesStore })
+      expect(await viaRecent.reopenRecentB(id)).toBe(false)
+      const messageFromRecent = viaRecent.comparisonError.value
+
+      expect(messageFromRecent).not.toBeNull()
+      expect(messageFromRecent).toBe(messageFromUpload)
+    })
+
+    it('RF-03 AC fim a fim: soma das quatro contagens bate com o total de registros pareados (fixture conhecida)', async () => {
+      useCurrentDataset().setDataset(
+        {
+          header: ['id', 'amount'],
+          rows: [
+            ['1', '100'],
+            ['2', '200'],
+            ['3', '300'],
+          ],
+        },
+        {
+          id: 1,
+          name: 'a.csv',
+          delimiter: 'comma',
+          sizeBytes: 10,
+          rowCount: 3,
+          columnCount: 2,
+        },
+      )
+
+      // B: id=1 igual (unchanged), id=2 diverge em amount (changed), id=3 só
+      // em A (removed), id=4 só em B (added) — categorias conhecidas de antemão.
+      const { openFileB, keyColumn, summary, result } = useComparisonDatasets({ parser })
+      const file = new File(['id,amount\n1,100\n2,999\n4,400'], 'b.csv')
+      expect(await openFileB(file)).toBe(true)
+      keyColumn.value = 'id'
+
+      expect(summary.value).toEqual({ added: 1, removed: 1, changed: 1, unchanged: 1 })
+      const total =
+        summary.value!.added + summary.value!.removed + summary.value!.changed + summary.value!.unchanged
+      expect(total).toBe(result.value!.records.length)
+    })
+
+    it('não-persistência de B (upload e recente) preserva a contagem e a ordem dos arquivos existentes', async () => {
+      loadDatasetA()
+      const filesStore = useFilesStore()
+      const idOld = await filesStore.saveFile(
+        makeStored({ name: 'old.csv', last_opened_at: 1_000 }),
+      )
+      const idNewer = await filesStore.saveFile(
+        makeStored({ name: 'newer.csv', last_opened_at: 2_000 }),
+      )
+
+      const beforeList = await filesStore.listFiles()
+      expect(beforeList.map((f) => f.id)).toEqual([idNewer, idOld])
+
+      const { openFileB, reopenRecentB } = useComparisonDatasets({ parser, filesStore })
+
+      const uploadFile = new File(['id,name\n1,Zoe'], 'people-b.csv')
+      expect(await openFileB(uploadFile)).toBe(true)
+      expect(await reopenRecentB(idOld)).toBe(true)
+
+      const afterList = await filesStore.listFiles()
+      expect(afterList).toHaveLength(2)
+      expect(afterList.map((f) => f.id)).toEqual([idNewer, idOld])
+      expect(afterList.find((f) => f.id === idOld)?.last_opened_at).toBe(1_000)
+      expect(afterList.find((f) => f.id === idNewer)?.last_opened_at).toBe(2_000)
     })
   })
 })

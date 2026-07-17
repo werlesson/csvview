@@ -4,6 +4,8 @@ import { h, nextTick, Suspense } from 'vue'
 import ComparePage from '~/pages/compare.vue'
 import { useCurrentDataset, type Dataset } from '~/composables/useCurrentDataset'
 import { useComparisonDatasets } from '~/composables/useComparisonDatasets'
+import { useOpenFile } from '~/composables/useOpenFile'
+import { useFilesStore } from '~/composables/useFilesStore'
 import { deleteDatabase } from '~/composables/useDatabase'
 
 /** Dataset A de exemplo: id (number), name (text), amount (number) — 2 linhas mudam, 2 não. */
@@ -147,5 +149,49 @@ describe('compare.vue — página de comparação (file-comparison, T06)', () =>
 
     const restoredRows = wrapper.findAll('.compare-table__body .compare-table__row')
     expect(restoredRows.length).toBe(totalRows)
+  })
+
+  // T08 — cenário cross-cutting: usa a página real com useOpenFile/
+  // useCurrentDataset/useFilesStore reais (sem mocks), fechando o laço aberto
+  // pela troca de A em `useComparisonDatasets.spec.ts`.
+  it('T08: trocar A por um terceiro arquivo real enquanto na tela de comparação reabre o CompareFileSelector (reset de B)', async () => {
+    useCurrentDataset().setDataset(makeDatasetA(), {
+      name: 'transactions_v1.csv',
+      delimiter: 'comma',
+      sizeBytes: 128,
+      rowCount: 3,
+      columnCount: 3,
+    })
+
+    const wrapper = await mountCompare()
+
+    const file = new File([CONTENT_B], 'transactions_v2.csv', { type: 'text/csv' })
+    const dropzone = wrapper.get('.compare-selector-overlay input[type="file"]')
+    Object.defineProperty(dropzone.element, 'files', { value: [file] })
+    await dropzone.trigger('change')
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.find('.compare-selector-overlay').exists()).toBe(false)
+    expect(wrapper.find('.compare-table').exists()).toBe(true)
+
+    const filesBefore = await useFilesStore().listFiles()
+    expect(filesBefore).toHaveLength(0)
+
+    // Fluxo real (não mockado) de abrir um terceiro arquivo como novo A —
+    // mesmo useOpenFile/useCsvParser/useFilesStore da tela de Upload.
+    const { openFile } = useOpenFile()
+    const thirdFile = new File(['id,name,amount\n9,Nova,1'], 'transactions_v3.csv')
+    expect(await openFile(thirdFile)).toBe(true)
+    await nextTick()
+
+    expect(wrapper.find('.compare-selector-overlay').exists()).toBe(true)
+    expect(wrapper.find('.compare-table').exists()).toBe(false)
+
+    // Persistência do terceiro arquivo (A novo) não é afetada pela comparação
+    // descartada — dataset B nunca foi salvo em `files` (RF-01/CT-01).
+    const filesAfter = await useFilesStore().listFiles()
+    expect(filesAfter).toHaveLength(1)
+    expect(filesAfter[0]?.name).toBe('transactions_v3.csv')
   })
 })
