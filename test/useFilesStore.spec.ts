@@ -1,10 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { deleteDatabase } from '~/composables/useDatabase'
+import { deleteDatabase, type SessionRecord } from '~/composables/useDatabase'
 import {
   MAX_RECENT_FILES,
   useFilesStore,
   type NewFile,
 } from '~/composables/useFilesStore'
+import { useSessionStore } from '~/composables/useSessionStore'
+
+function makeSession(fileId: number): SessionRecord {
+  return {
+    fileId,
+    columnCount: 2,
+    filters: [],
+    sortKeys: [],
+    hidden: [],
+    widths: [],
+    order: [],
+    pinned: [],
+    updated_at: 1_000,
+  }
+}
 
 function makeFile(overrides: Partial<NewFile> = {}): NewFile {
   return {
@@ -95,6 +110,55 @@ describe('files store', () => {
       expect(await getFile(newestId)).toBeDefined()
       expect(files.map((f) => f.name)).not.toContain('file-0.csv')
       expect(files.map((f) => f.name)).toContain('file-11.csv')
+    })
+  })
+
+  describe('files-session-cascade-delete', () => {
+    it('excluir manualmente um arquivo com sessão salva remove ambos', async () => {
+      const { saveFile, deleteFile, getFile } = useFilesStore()
+      const { saveSession, getSession } = useSessionStore()
+
+      const id = await saveFile(makeFile())
+      await saveSession(makeSession(id))
+
+      await deleteFile(id)
+
+      expect(await getFile(id)).toBeUndefined()
+      expect(await getSession(id)).toBeUndefined()
+    })
+
+    it('a 11ª inserção evictando o mais antigo remove também a sessão do evictado', async () => {
+      const { saveFile, listFiles } = useFilesStore()
+      const { saveSession, getSession } = useSessionStore()
+
+      const ids: number[] = []
+      for (let i = 0; i < MAX_RECENT_FILES; i += 1) {
+        const id = await saveFile(
+          makeFile({ name: `file-${i}.csv`, last_opened_at: 100 + i }),
+        )
+        ids.push(id)
+        await saveSession(makeSession(id))
+      }
+
+      await saveFile(makeFile({ name: 'file-11.csv', last_opened_at: 999 }))
+
+      const files = await listFiles()
+      expect(files).toHaveLength(MAX_RECENT_FILES)
+      // O mais antigo (file-0, ids[0]) foi evictado — sua sessão some junto.
+      expect(await getSession(ids[0]!)).toBeUndefined()
+      // As demais sessões permanecem intactas.
+      expect(await getSession(ids[1]!)).toBeDefined()
+    })
+
+    it('consultar a sessão de um id já excluído não retorna registro', async () => {
+      const { saveFile, deleteFile } = useFilesStore()
+      const { saveSession, getSession } = useSessionStore()
+
+      const id = await saveFile(makeFile())
+      await saveSession(makeSession(id))
+      await deleteFile(id)
+
+      expect(await getSession(id)).toBeUndefined()
     })
   })
 

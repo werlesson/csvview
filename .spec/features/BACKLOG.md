@@ -6,12 +6,15 @@
 
 ## Status do planejamento
 
-| Feature | Planejada? | Artefatos |
-|---|---|---|
-| `table-interactions` | ✅ sim | `.spec/features/table-interactions/` (SPEC v1.1, PLAN, PHASES — 12 tarefas / 11 fases) |
-| `rich-types-and-stats` | ✅ sim | `.spec/features/rich-types-and-stats/` (SPEC v1.1, PLAN, PHASES — 7 tarefas / 2 fases) |
-| `filters` | ✅ sim | `.spec/features/filters/` (SPEC v1.1, PLAN, PHASES — 6 tarefas / 4 fases) |
-| demais (#4 em diante) | ⏳ pendente | rodar `/plan` por slug |
+| # | Feature | Planejada? | Implementada? | Artefatos |
+|---|---|---|---|---|
+| 1 | `table-interactions` | ✅ sim | ✅ sim | `.spec/features/table-interactions/` (SPEC v1.1, PLAN, PHASES — 12 tarefas / 11 fases) |
+| 2 | `rich-types-and-stats` | ✅ sim | ✅ sim | `.spec/features/rich-types-and-stats/` (SPEC v1.1, PLAN, PHASES — 7 tarefas / 2 fases) |
+| 3 | `filters` | ✅ sim | ✅ sim | `.spec/features/filters/` (SPEC v1.1, PLAN, PHASES — 6 tarefas / 4 fases) |
+| 4 | `export` | ✅ sim | ✅ sim | `.spec/features/export/` (SPEC, PLAN, PHASES) |
+| 5 | `visual-highlights` | ✅ sim | ✅ sim | `.spec/features/visual-highlights/` (SPEC, PLAN, PHASES) |
+| 6 | `sessions` | 🔄 em andamento (SPEC) | ⏳ pendente | `.spec/features/sessions/SPEC.md` |
+| | demais (#7 em diante) | ⏳ pendente | ⏳ pendente | rodar `/plan` por slug |
 
 ## Como usar este backlog
 

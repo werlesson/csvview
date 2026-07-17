@@ -1,4 +1,5 @@
 import { readonly, ref } from 'vue'
+import { useSettingsStore } from '~/composables/useSettingsStore'
 
 export type Theme = 'dark' | 'light'
 
@@ -8,11 +9,12 @@ export type Theme = 'dark' | 'light'
 export const DEFAULT_THEME: Theme = 'dark'
 
 /**
- * Chave de persistência da preferência de tema.
+ * Chave de persistência da preferência de tema em `localStorage`.
  *
- * Nesta fase a preferência é lida/escrita em `localStorage` (client-side,
- * sem servidor). Na Fase 3 este ponto passa a integrar com o store
- * `settings` do IndexedDB, preservando o mesmo contrato do composable.
+ * RF-04: a fonte de verdade é o store `settings` do IndexedDB (via
+ * `useSettingsStore`); `localStorage` permanece só como cache síncrono de
+ * primeira pintura, para evitar o "flash" do tema padrão antes da resolução
+ * assíncrona (`ssr:false` — o app é 100% client-side).
  */
 export const THEME_STORAGE_KEY = 'csvview:theme'
 
@@ -31,6 +33,12 @@ function readStoredTheme(): Theme {
   return isTheme(stored) ? stored : DEFAULT_THEME
 }
 
+function writeStoredTheme(value: Theme): void {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(THEME_STORAGE_KEY, value)
+  }
+}
+
 function applyTheme(value: Theme): void {
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', value)
@@ -40,21 +48,43 @@ function applyTheme(value: Theme): void {
 /**
  * Estado de tema compartilhado. Aplica `data-theme` no elemento raiz,
  * usa dark como padrão quando não há preferência salva, e persiste a
- * escolha do usuário.
+ * escolha do usuário através do store `settings` do IndexedDB (RF-04).
  */
 export function useTheme() {
   if (!initialized) {
     initialized = true
+    // Cache síncrono de primeira pintura (evita o flash do tema padrão).
     theme.value = readStoredTheme()
     applyTheme(theme.value)
+
+    // Fonte de verdade assíncrona: lida uma única vez por módulo, sobrescreve
+    // o cache acima se divergir. Falha (ex.: IndexedDB indisponível) é
+    // engolida e apenas logada — nunca quebra a leitura síncrona acima.
+    useSettingsStore()
+      .getTheme()
+      .then((stored) => {
+        if (isTheme(stored) && stored !== theme.value) {
+          theme.value = stored
+          applyTheme(stored)
+        }
+      })
+      .catch((error) => {
+        console.error('Falha ao ler o tema persistido:', error)
+      })
   }
 
   function setTheme(value: Theme): void {
     theme.value = value
     applyTheme(value)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(THEME_STORAGE_KEY, value)
-    }
+    // Cache secundário síncrono (não mais o único caminho de persistência).
+    writeStoredTheme(value)
+    // Persistência efetiva (RF-04), fire-and-forget: nunca bloqueia nem
+    // expõe a Promise, preservando a assinatura `void` de `setTheme`.
+    useSettingsStore()
+      .setTheme(value)
+      .catch((error) => {
+        console.error('Falha ao persistir o tema:', error)
+      })
   }
 
   function toggleTheme(): void {
