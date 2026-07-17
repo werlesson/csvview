@@ -9,7 +9,7 @@ Antes de implementar, leia:
 1. `.spec/features/cell-editing/SPEC.md` — requisitos RIGID que esta fase cobre
 2. `.spec/features/cell-editing/PLAN.md` — decomposição completa, dependências e riscos
 
-- [ ] T01 — Serialização Dataset → texto (`stringifyDataset`)
+- [x] T01 — Serialização Dataset → texto (`stringifyDataset`)
       Arquivos: `app/services/csvParser.ts`
       Mudança: adicionar função pura `stringifyDataset(dataset, delimiter)`,
       ao lado de `parseCsv`/`detectDelimiter`, com quoting CSV padrão
@@ -22,7 +22,7 @@ Antes de implementar, leia:
       Testes: `test/csvParser.spec.ts` — round-trip nos 3 delimitadores;
       quoting de campos especiais; dataset sem linhas de dados.
 
-- [ ] T02 — `updateCell` em `useCurrentDataset`
+- [x] T02 — `updateCell` em `useCurrentDataset`
       Arquivos: `app/composables/useCurrentDataset.ts`
       Mudança: adicionar `updateCell(rowIndex, columnIndex, value)` que
       muta `dataset.value.rows[rowIndex][columnIndex]`, preservando
@@ -37,7 +37,7 @@ Antes de implementar, leia:
       `computed` que lê `dataset.value.rows` reavalia após `updateCell`;
       índices inválidos são no-op.
 
-- [ ] T04 — `overwriteFile` em `useFilesStore`
+- [x] T04 — `overwriteFile` em `useFilesStore`
       Arquivos: `app/composables/useFilesStore.ts`
       Mudança: adicionar `overwriteFile(id, patch)` que substitui
       `content`/`delimiter`/`size_bytes`/`row_count`/`column_count` do

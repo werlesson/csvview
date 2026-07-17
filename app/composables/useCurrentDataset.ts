@@ -51,11 +51,25 @@ export function useCurrentDataset() {
     meta.value = null
   }
 
+  /**
+   * Muta `dataset.value.rows[rowIndex][columnIndex]` in-place (CT-01). Sem
+   * dataset carregado ou com índices fora dos limites, é um no-op silencioso
+   * — nunca lança.
+   */
+  function updateCell(rowIndex: number, columnIndex: number, value: string): void {
+    const current = dataset.value
+    if (!current) return
+    const row = current.rows[rowIndex]
+    if (!row || columnIndex < 0 || columnIndex >= row.length) return
+    row[columnIndex] = value
+  }
+
   return {
     dataset: readonly(dataset),
     meta: readonly(meta),
     hasDataset: computed(() => dataset.value !== null),
     setDataset,
     clearDataset,
+    updateCell,
   }
 }
