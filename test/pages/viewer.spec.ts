@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { h, nextTick, Suspense } from 'vue'
 import ViewerPage from '~/pages/viewer.vue'
 import { useCurrentDataset, type Dataset } from '~/composables/useCurrentDataset'
+import { useFilesStore } from '~/composables/useFilesStore'
+import { deleteDatabase } from '~/composables/useDatabase'
 
 /** Dataset de exemplo: id (number), status (text), amount (number). */
 function makeDataset(): Dataset {
@@ -262,5 +264,119 @@ describe('viewer.vue — fiação dos destaques visuais (Fase 4, T08)', () => {
     // Célula duplicada ("Ana", coluna name): badge "dup ×2" no DOM — só aparece
     // se `columnDuplicateCounts` chegou não vazio ao ViewerTable.
     expect(wrapper.get('.csv-cell__dup-badge').text()).toBe('dup ×2')
+  })
+})
+
+describe('viewer.vue — fiação da edição de célula (cell-editing, T09)', () => {
+  // `useCellEditing`/`useCurrentDataset`/`useFilesStore` são singletons de
+  // módulo (mesmo padrão de `test/ViewerTable.spec.ts`, describe "T07") — cada
+  // teste abre uma conexão de IndexedDB limpa (`deleteDatabase`) e carrega um
+  // dataset já persistido (com `id`), para exercitar tanto "Salvar nova
+  // versão" (RF-11, sempre cria um registro novo) quanto "Sobrescrever
+  // original" (RF-15, exige `meta.id`). happy-dom mede o scroller do
+  // ViewerTable com offsetHeight 0 — sem o stub abaixo o virtualizador não
+  // renderiza nenhuma linha do corpo (ver MEMORY
+  // viewertable-virtualizer-no-body-rows-jsdom): stub + duplo nextTick.
+  const CONTENT = 'id,status,amount\n1,settled,100\n2,failed,250\n3,failed,-50\n4,settled,10'
+
+  beforeEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  /** Persiste o dataset de exemplo em `files` e monta o Viewer já apontando para esse registro. */
+  async function mountPersistedViewer(): Promise<{
+    wrapper: Awaited<ReturnType<typeof mountViewer>>
+    fileId: number
+  }> {
+    const fileId = await useFilesStore().saveFile({
+      name: 'transactions.csv',
+      delimiter: 'comma',
+      size_bytes: CONTENT.length,
+      row_count: 4,
+      column_count: 3,
+      content: CONTENT,
+    })
+
+    useCurrentDataset().setDataset(makeDataset(), {
+      id: fileId,
+      name: 'transactions.csv',
+      delimiter: 'comma',
+      sizeBytes: CONTENT.length,
+      rowCount: 4,
+      columnCount: 3,
+    })
+
+    const wrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+    return { wrapper, fileId }
+  }
+
+  it('fluxo completo: editar → confirmar → undo → redo → "Salvar nova versão" → "Sobrescrever original"', async () => {
+    const { wrapper, fileId } = await mountPersistedViewer()
+    const filesStore = useFilesStore()
+
+    const bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+    const cell = bodyRows[0]!.findAll('.csv-cell')[1]! // coluna "status" da linha 0 ("settled")
+
+    // Editar → confirmar (RF-01/RF-02/RF-05).
+    await cell.trigger('click')
+    await nextTick()
+    const input = cell.find('.csv-cell__input')
+    await input.setValue('pending')
+    await input.trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    expect(cell.text()).toContain('pending')
+    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeDefined()
+
+    // Desfazer (RF-06), acionado pela toolbar.
+    await wrapper.get('button[aria-label="Desfazer"]').trigger('click')
+    await nextTick()
+
+    expect(cell.text()).toContain('settled')
+    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeUndefined()
+
+    // Refazer (RF-07), acionado pela toolbar.
+    await wrapper.get('button[aria-label="Refazer"]').trigger('click')
+    await nextTick()
+
+    expect(cell.text()).toContain('pending')
+
+    // "Salvar nova versão" (RF-11/RF-12): cria um novo registro, preserva o original.
+    await wrapper.get('.toolbar__save-version').trigger('click')
+    await flushPromises()
+
+    const filesAfterSave = await filesStore.listFiles()
+    expect(filesAfterSave).toHaveLength(2)
+    const newRecord = filesAfterSave.find((f) => f.id !== fileId)
+    expect(newRecord?.content).toContain('pending')
+    const original = await filesStore.getFile(fileId)
+    expect(original?.content).toBe(CONTENT)
+
+    // "Sobrescrever original" (RF-15): substitui o content do mesmo id, sem novo registro.
+    await wrapper.get('.toolbar__overwrite').trigger('click')
+    await flushPromises()
+
+    const filesAfterOverwrite = await filesStore.listFiles()
+    expect(filesAfterOverwrite).toHaveLength(2)
+    const overwritten = await filesStore.getFile(fileId)
+    expect(overwritten?.content).toContain('pending')
   })
 })

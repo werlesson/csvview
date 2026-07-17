@@ -8,6 +8,8 @@ import FilterChips from '~/components/FilterChips.vue'
 import ExportModal from '~/components/ExportModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
+import { useCellEditing } from '~/composables/useCellEditing'
+import { useSaveVersion } from '~/composables/useSaveVersion'
 
 /**
  * Tela do **Viewer** (Fase 7).
@@ -65,6 +67,30 @@ const {
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
 
+/**
+ * Edição de célula (T03) e persistência da versão editada (T05, cell-editing
+ * T09) — nenhum estado de edição próprio na página, só a fiação entre os
+ * composables e `ViewerToolbar` (undo/redo/salvar/sobrescrever).
+ */
+const { canUndo, canRedo, undo, redo } = useCellEditing()
+const { error: saveError, saveNewVersion, overwriteOriginal } = useSaveVersion()
+
+function onUndo(): void {
+  undo()
+}
+
+function onRedo(): void {
+  redo()
+}
+
+function onSaveNewVersion(): void {
+  void saveNewVersion()
+}
+
+function onOverwriteOriginal(): void {
+  void overwriteOriginal()
+}
+
 /** Visibilidade do painel de filtros (UI-01) — nenhuma persistência (RF-07). */
 const showFilters = ref(false)
 
@@ -90,10 +116,17 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       :row-count="visibleRowCount"
       :columns="columns"
       :active-filter-count="activeFilterCount"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :save-error="saveError"
       @toggle-column="toggleColumn"
       @toggle-pin="togglePin"
       @toggle-filters="onToggleFilters"
       @open-export="onOpenExport"
+      @undo="onUndo"
+      @redo="onRedo"
+      @save-new-version="onSaveNewVersion"
+      @overwrite-original="onOverwriteOriginal"
     />
 
     <FilterChips :columns="columns" :filters="filters" @remove="removeFilter" />
