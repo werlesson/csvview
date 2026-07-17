@@ -117,11 +117,50 @@ export function useFilesStore() {
     return updated
   }
 
+  /**
+   * Substitui `content`/`delimiter`/`size_bytes`/`row_count`/`column_count`
+   * do registro existente, preservando `id`/`created_at` e atualizando
+   * `last_opened_at` (RF-15, CT-04). Mesmo padrão de transação de
+   * {@link touchFile}. Retorna `undefined` sem lançar quando `id` não existe.
+   */
+  async function overwriteFile(
+    id: number,
+    patch: {
+      content: string
+      delimiter: string
+      size_bytes: number
+      row_count: number
+      column_count: number
+    },
+    lastOpenedAt: number = Date.now(),
+  ): Promise<FileRecord | undefined> {
+    const db = await openDatabase()
+    const tx = db.transaction(FILES_STORE, 'readwrite')
+    const record = await tx.store.get(id)
+    if (!record) {
+      await tx.done
+      return undefined
+    }
+    const updated: FileRecord = {
+      ...record,
+      content: patch.content,
+      delimiter: patch.delimiter,
+      size_bytes: patch.size_bytes,
+      row_count: patch.row_count,
+      column_count: patch.column_count,
+      last_opened_at: lastOpenedAt,
+    }
+    await tx.store.put(updated)
+    await tx.done
+    return updated
+  }
+
   return {
     saveFile,
     getFile,
     listFiles,
     deleteFile,
     touchFile,
+    overwriteFile,
   }
 }

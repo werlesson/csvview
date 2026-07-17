@@ -33,9 +33,18 @@ const props = withDefaults(
     search: string
     /** Nº de filtros de coluna ativos (chips) — badge no controle "Filtros" (UI-02). */
     activeFilterCount?: number
+    /** `true` quando há ao menos uma entrada desfazível no histórico do dataset atual (RF-09). */
+    canUndo?: boolean
+    /** `true` quando há ao menos uma entrada refazível no histórico do dataset atual (RF-09). */
+    canRedo?: boolean
+    /** Mensagem de erro da última escrita de "Salvar nova versão"/"Sobrescrever original" (RNF-02). */
+    saveError?: string | null
   }>(),
   {
     activeFilterCount: 0,
+    canUndo: false,
+    canRedo: false,
+    saveError: null,
   },
 )
 
@@ -45,6 +54,10 @@ const emit = defineEmits<{
   (e: 'toggle-pin', index: number): void
   (e: 'toggle-filters'): void
   (e: 'open-export'): void
+  (e: 'undo'): void
+  (e: 'redo'): void
+  (e: 'save-new-version'): void
+  (e: 'overwrite-original'): void
 }>()
 
 function onToggleFilters(): void {
@@ -53,6 +66,24 @@ function onToggleFilters(): void {
 
 function onOpenExport(): void {
   emit('open-export')
+}
+
+function onUndo(): void {
+  if (!props.canUndo) return
+  emit('undo')
+}
+
+function onRedo(): void {
+  if (!props.canRedo) return
+  emit('redo')
+}
+
+function onSaveNewVersion(): void {
+  emit('save-new-version')
+}
+
+function onOverwriteOriginal(): void {
+  emit('overwrite-original')
 }
 
 function onSearch(value: string): void {
@@ -190,6 +221,81 @@ function onTogglePin(index: number): void {
     </div>
 
     <div class="toolbar__meta">
+      <span v-if="saveError" class="toolbar__save-error" role="alert">{{ saveError }}</span>
+
+      <div class="toolbar__history" role="group" aria-label="Desfazer/Refazer">
+        <button
+          type="button"
+          class="toolbar__history-btn"
+          aria-label="Desfazer"
+          :disabled="!canUndo"
+          @click="onUndo"
+        >
+          <svg
+            class="toolbar__icon"
+            viewBox="0 0 16 16"
+            width="15"
+            height="15"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M6 3.5 2.5 7 6 10.5 M2.5 7 H10 A3.5 3.5 0 0 1 10 14 H8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>Desfazer</span>
+        </button>
+        <button
+          type="button"
+          class="toolbar__history-btn"
+          aria-label="Refazer"
+          :disabled="!canRedo"
+          @click="onRedo"
+        >
+          <svg
+            class="toolbar__icon"
+            viewBox="0 0 16 16"
+            width="15"
+            height="15"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M10 3.5 13.5 7 10 10.5 M13.5 7 H6 A3.5 3.5 0 0 0 6 14 H8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>Refazer</span>
+        </button>
+      </div>
+
+      <button
+        type="button"
+        class="toolbar__overwrite"
+        aria-label="Sobrescrever original"
+        @click="onOverwriteOriginal"
+      >
+        <span>Sobrescrever original</span>
+      </button>
+
+      <button
+        type="button"
+        class="toolbar__save-version"
+        aria-label="Salvar nova versão"
+        @click="onSaveNewVersion"
+      >
+        <span>Salvar nova versão</span>
+      </button>
+
       <button
         type="button"
         class="toolbar__export"
@@ -293,6 +399,96 @@ function onTogglePin(index: number): void {
   font-size: 13px;
   color: var(--text-3);
   white-space: nowrap;
+}
+
+/* Mensagem de erro de "Salvar nova versão"/"Sobrescrever original" (RNF-02): exibida
+   sem bloquear os demais controles da toolbar. */
+.toolbar__save-error {
+  font-size: 12.5px;
+  color: var(--error);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Grupo "Desfazer"/"Refazer" (RF-06, RF-07, RF-09). */
+.toolbar__history {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar__history-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 10px;
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__history-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.toolbar__history-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* "Salvar nova versão" (RF-11): mesmo padrão visual accent-sólido do controle
+   "Exportar" — ação de gravação principal, não-destrutiva (cria um registro novo). */
+.toolbar__save-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__save-version:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* "Sobrescrever original" (RF-15, CT-04): visualmente distinto de "Salvar nova
+   versão" — borda de aviso, fundo transparente, para sinalizar uma ação destrutiva
+   (substitui o registro original) que nunca é disparada pelo botão padrão. */
+.toolbar__overwrite {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toolbar__overwrite:hover {
+  background: var(--warning-soft);
 }
 
 .toolbar__icon {

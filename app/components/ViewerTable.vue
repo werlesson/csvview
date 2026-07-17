@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
 import HighlightLegend from '~/components/HighlightLegend.vue'
+import { useCellEditing } from '~/composables/useCellEditing'
 import { isDateLikeColumn, isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
@@ -362,6 +363,65 @@ const dateLikeColumns = computed<Map<number, boolean>>(() => {
 function invalidDateFor(column: ViewerColumn, value: string | undefined): boolean {
   return (dateLikeColumns.value.get(column.index) ?? false) && !isEmptyCell(value) && !isDateValue(value)
 }
+
+/**
+ * Edição inline por linha visível (`cell-editing`, T07): consome
+ * `useCellEditing()` (T03) e repassa `editable`/`editing`/`invalid-edit`/
+ * `dirty` a cada `CsvCell` (T06), chamando `beginEdit`/`confirmEdit`/
+ * `cancelEdit` a partir dos emits `edit-start`/`edit-confirm`/`edit-cancel`.
+ * `useCellEditing`/`useCurrentDataset` indexam célula por posição no dataset
+ * **completo** (CT-02, `dataset.value.rows[rowIndex]`), mas `virtualRow.index`
+ * é a posição dentro de `rows` (prop já filtrada/ordenada por `useViewer`) —
+ * as duas só coincidem sem filtro/ordenação ativos. `trueRowIndex` resolve
+ * `virtualRow.index` para o índice real no dataset completo via identidade
+ * de referência da linha (`filter`/`sort` preservam a mesma referência
+ * `string[]`, nunca clonam linhas), para que uma edição sob filtro/ordenação
+ * ativos (RF-13) sempre afete a linha realmente clicada, nunca a linha na
+ * mesma posição do dataset completo. Nenhum emit/prop de multi-seleção,
+ * paste ou estrutura é adicionado (RF-14).
+ */
+const { dataset: editingDataset, editingCell, validationError, beginEdit, confirmEdit, cancelEdit, isDirty } =
+  useCellEditing()
+
+/** Referência de linha (`string[]`) → índice real no dataset completo (CT-02). */
+const trueRowIndexByRow = computed<Map<string[], number>>(() => {
+  const map = new Map<string[], number>()
+  editingDataset.value?.rows.forEach((row, index) => map.set(row, index))
+  return map
+})
+
+/** Resolve a posição de uma linha visível (`virtualRow.index`, em `rows`) para seu índice real no dataset completo. */
+function trueRowIndex(virtualIndex: number): number {
+  const row = props.rows[virtualIndex]
+  if (row === undefined) return virtualIndex
+  return trueRowIndexByRow.value.get(row) ?? virtualIndex
+}
+
+/** A célula na linha/coluna indicadas está em modo de edição (RF-01). */
+function isEditingCell(rowIndex: number, columnIndex: number): boolean {
+  const editing = editingCell.value
+  return editing !== null && editing.rowIndex === rowIndex && editing.columnIndex === columnIndex
+}
+
+/** A célula em edição teve sua última confirmação rejeitada por validação de tipo (RF-04, UI-02). */
+function isInvalidEditCell(rowIndex: number, columnIndex: number): boolean {
+  return isEditingCell(rowIndex, columnIndex) && validationError.value !== null
+}
+
+/** `edit-start` (RF-01): entra em modo de edição só na célula clicada. */
+function onEditStart(rowIndex: number, columnIndex: number): void {
+  beginEdit(rowIndex, columnIndex)
+}
+
+/** `edit-confirm` (RF-02/RF-04): confirma o valor digitado na célula em edição. */
+function onEditConfirm(value: string): void {
+  confirmEdit(value)
+}
+
+/** `edit-cancel` (RF-03): cancela a edição em andamento, sem tocar no histórico. */
+function onEditCancel(): void {
+  cancelEdit()
+}
 </script>
 
 <template>
@@ -497,6 +557,13 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
             :dup-count="dupCountFor(column, rows[virtualRow.index]?.[column.index])"
             :negative="negativeFor(column, rows[virtualRow.index]?.[column.index])"
             :invalid-date="invalidDateFor(column, rows[virtualRow.index]?.[column.index])"
+            editable
+            :editing="isEditingCell(trueRowIndex(virtualRow.index), column.index)"
+            :invalid-edit="isInvalidEditCell(trueRowIndex(virtualRow.index), column.index)"
+            :dirty="isDirty(trueRowIndex(virtualRow.index), column.index)"
+            @edit-start="onEditStart(trueRowIndex(virtualRow.index), column.index)"
+            @edit-confirm="onEditConfirm"
+            @edit-cancel="onEditCancel"
           />
         </tr>
       </tbody>

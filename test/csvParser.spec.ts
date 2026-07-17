@@ -4,6 +4,8 @@ import {
   detectDelimiter,
   parseCsv,
   runParseRequest,
+  stringifyDataset,
+  type Delimiter,
   type ParseWorkerMessage,
 } from '~/services/csvParser'
 
@@ -195,6 +197,59 @@ describe('motor de parsing CSV/TSV', () => {
       expect(result.delimiter).toBe('semicolon')
       expect(result.header).toEqual(['a', 'b', 'c'])
       expect(result.rows).toEqual([['1', '2', '3']])
+    })
+  })
+
+  describe('stringify-roundtrip', () => {
+    const delimiters: Delimiter[] = ['comma', 'tab', 'semicolon']
+
+    it.each(delimiters)(
+      'round-trip parseCsv(stringifyDataset(dataset, %s)) reproduz header/rows',
+      async (delimiter) => {
+        const dataset = {
+          header: ['id', 'name', 'note'],
+          rows: [
+            ['1', 'Ana', 'ok'],
+            ['2', 'Bruno', 'ok'],
+          ],
+        }
+
+        const content = stringifyDataset(dataset, delimiter)
+        const result = await parseCsv(content, { delimiter })
+
+        expect(result.header).toEqual(dataset.header)
+        expect(result.rows).toEqual(dataset.rows)
+      },
+    )
+
+    it.each(delimiters)(
+      'quota campos contendo o delimitador, aspas duplas ou quebra de linha (%s)',
+      async (delimiter) => {
+        const delimiterChar = { comma: ',', tab: '\t', semicolon: ';' }[
+          delimiter
+        ]
+        const dataset = {
+          header: ['name', 'note'],
+          rows: [
+            [`Doe${delimiterChar}John`, 'linha1\nlinha2'],
+            ['Simple', 'aspas "internas" aqui'],
+          ],
+        }
+
+        const content = stringifyDataset(dataset, delimiter)
+        const result = await parseCsv(content, { delimiter })
+
+        expect(result.header).toEqual(dataset.header)
+        expect(result.rows).toEqual(dataset.rows)
+      },
+    )
+
+    it('dataset sem linhas de dados serializa apenas o cabeçalho', () => {
+      const dataset = { header: ['a', 'b', 'c'], rows: [] }
+
+      const content = stringifyDataset(dataset, 'comma')
+
+      expect(content).toBe('a,b,c')
     })
   })
 

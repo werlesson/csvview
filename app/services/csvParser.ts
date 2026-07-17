@@ -188,6 +188,39 @@ export function detectDelimiter(fileName: string, content?: string): Delimiter {
 }
 
 /**
+ * Aplica quoting CSV padrão a um campo: envolve em aspas duplas quando o
+ * valor contém o delimitador, uma aspas dupla (dobrada) ou uma quebra de
+ * linha — necessário para round-trip correto com {@link parseCsv} (PapaParse).
+ */
+function quoteField(value: string, delimiterChar: string): string {
+  if (
+    value.includes(delimiterChar) ||
+    value.includes('"') ||
+    value.includes('\n') ||
+    value.includes('\r')
+  ) {
+    return `"${value.replace(/"/g, '""')}"`
+  }
+  return value
+}
+
+/**
+ * Serializa um dataset (cabeçalho + linhas) de volta a texto, no delimitador
+ * informado, com quoting CSV padrão. Função pura, inversa de {@link parseCsv}
+ * para o conteúdo produzido (RF-11, CT-03).
+ */
+export function stringifyDataset(
+  dataset: { header: string[]; rows: string[][] },
+  delimiter: Delimiter,
+): string {
+  const delimiterChar = DELIMITER_CHARS[delimiter]
+  const lines = [dataset.header, ...dataset.rows].map((row) =>
+    row.map((cell) => quoteField(cell, delimiterChar)).join(delimiterChar),
+  )
+  return lines.join('\n')
+}
+
+/**
  * Normaliza uma linha ao número de colunas do cabeçalho: faltantes viram
  * células vazias; excedentes são preservadas (US-1.2).
  */

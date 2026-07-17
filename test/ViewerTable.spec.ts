@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import ViewerTable from '~/components/ViewerTable.vue'
+import { useCurrentDataset, type Dataset, type DatasetMeta } from '~/composables/useCurrentDataset'
 import type { ViewerColumn } from '~/composables/useViewer'
 
 function makeColumns(): ViewerColumn[] {
@@ -829,6 +830,162 @@ describe('ViewerTable', () => {
       expect(legendItems).toHaveLength(4)
       const legendLabels = legendItems.map((item) => item.get('.highlight-legend__label').text())
       expect(legendLabels).toEqual(['vazio', 'duplicado', 'negativo', 'data inválida'])
+    })
+  })
+
+  // T07: orquestra useCellEditing() (T03) por linha visível, repassando
+  // editable/editing/invalid-edit/dirty a cada CsvCell (T06). `useCellEditing`/
+  // `useCurrentDataset` são singletons de módulo (ver test/useCellEditing.spec.ts),
+  // então cada teste carrega um dataset com `id` novo (força o reset de RF-10) e
+  // passa a `rows` REATIVA (`dataset.value.rows`, não o array bruto) — mutações
+  // de `updateCell` só refletem no prop `rows` quando é a mesma referência
+  // reativa. Precisa de linhas de corpo reais (ver MEMORY
+  // viewertable-virtualizer-no-body-rows-jsdom): stub de offsetHeight + duplo nextTick.
+  describe('T07: edição inline por linha visível (cell-editing)', () => {
+    let nextId = 1
+
+    function makeMeta(): DatasetMeta {
+      return {
+        id: nextId++,
+        name: 'people.csv',
+        delimiter: 'comma',
+        sizeBytes: 42,
+        rowCount: 2,
+        columnCount: 3,
+      }
+    }
+
+    /** Carrega um dataset com `id` sempre distinto (reseta useCellEditing, RF-10)
+     *  e devolve as linhas reativas (`dataset.value.rows`), para usar como prop `rows`. */
+    function loadDataset(): string[][] {
+      const raw: Dataset = {
+        header: ['id', 'name', 'amount'],
+        rows: [
+          ['1', 'Ana', '100'],
+          ['2', 'Bruno', '250'],
+        ],
+      }
+      useCurrentDataset().setDataset(raw, makeMeta())
+      return useCurrentDataset().dataset.value!.rows
+    }
+
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      useCurrentDataset().clearDataset()
+    })
+
+    async function mountEditable(rows: string[][]) {
+      const wrapper = mount(ViewerTable, { props: { columns: makeColumns(), rows } })
+      await nextTick()
+      await nextTick()
+      return wrapper
+    }
+
+    it('RF-01/UI-01: clicar numa célula editável entra em modo de edição só naquela célula', async () => {
+      const rows = loadDataset()
+      const wrapper = await mountEditable(rows)
+      const bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
+      const targetCell = bodyRows[0]!.findAll('.csv-cell')[1]! // linha 0, coluna "name"
+
+      await targetCell.trigger('click')
+      await nextTick()
+
+      expect(targetCell.classes()).toContain('csv-cell--editing')
+      expect(targetCell.find('.csv-cell__input').exists()).toBe(true)
+      // As demais células permanecem estáticas (sem input).
+      expect(bodyRows[0]!.findAll('.csv-cell')[0]!.find('.csv-cell__input').exists()).toBe(false)
+      expect(bodyRows[1]!.findAll('.csv-cell')[1]!.find('.csv-cell__input').exists()).toBe(false)
+    })
+
+    it('RF-02/RF-05/UI-03: confirmar um valor válido atualiza a linha exibida, marca "sujo" e limpa o indicador de erro', async () => {
+      const rows = loadDataset()
+      const wrapper = await mountEditable(rows)
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]! // "name" da linha 0 ("Ana")
+
+      await cell.trigger('click')
+      await nextTick()
+      const input = cell.find('.csv-cell__input')
+      await input.setValue('Alice')
+      await input.trigger('keydown', { key: 'Enter' })
+      await nextTick()
+      await nextTick()
+
+      const updatedCell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+      expect(updatedCell.text()).toContain('Alice')
+      expect(updatedCell.find('.csv-cell__input').exists()).toBe(false)
+      expect(updatedCell.find('.csv-cell__invalid-indicator').exists()).toBe(false)
+      expect(updatedCell.find('.csv-cell__dirty-indicator').exists()).toBe(true)
+      expect(rows[0]![1]).toBe('Alice')
+    })
+
+    it('RF-04/UI-02: confirmar um valor inválido mantém o valor anterior e mostra o indicador de erro', async () => {
+      const rows = loadDataset()
+      const wrapper = await mountEditable(rows)
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[0]! // "id" (number) da linha 0 ("1")
+
+      await cell.trigger('click')
+      await nextTick()
+      const input = cell.find('.csv-cell__input')
+      await input.setValue('não-numérico')
+      await input.trigger('keydown', { key: 'Enter' })
+      await nextTick()
+      await nextTick()
+
+      expect(cell.find('.csv-cell__invalid-indicator').exists()).toBe(true)
+      expect(cell.find('.csv-cell__invalid-text').text().length).toBeGreaterThan(0)
+      expect(rows[0]![0]).toBe('1')
+    })
+
+    it('RF-03: Esc cancela a edição, restaura o valor original e não altera a linha exibida', async () => {
+      const rows = loadDataset()
+      const wrapper = await mountEditable(rows)
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+
+      await cell.trigger('click')
+      await nextTick()
+      const input = cell.find('.csv-cell__input')
+      await input.setValue('rascunho descartado')
+      await input.trigger('keydown', { key: 'Escape' })
+      await nextTick()
+      await nextTick()
+
+      expect(cell.find('.csv-cell__input').exists()).toBe(false)
+      expect(cell.text()).toContain('Ana')
+      expect(rows[0]![1]).toBe('Ana')
+    })
+
+    it('RF-14: o fluxo de edição não dispara nenhuma interação de seleção múltipla/estrutura já existente', async () => {
+      const rows = loadDataset()
+      const wrapper = await mountEditable(rows)
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+
+      await cell.trigger('click')
+      await nextTick()
+      const input = cell.find('.csv-cell__input')
+      await input.setValue('Alice')
+      await input.trigger('keydown', { key: 'Enter' })
+      await nextTick()
+
+      expect(wrapper.emitted('select-column')).toBeUndefined()
+      expect(wrapper.emitted('sort')).toBeUndefined()
+      expect(wrapper.emitted('sort-additive')).toBeUndefined()
+      expect(wrapper.emitted('reorder')).toBeUndefined()
+      expect(wrapper.emitted('resize')).toBeUndefined()
+      expect(wrapper.emitted('toggle-pin')).toBeUndefined()
     })
   })
 })

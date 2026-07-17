@@ -117,4 +117,104 @@ describe('CsvCell', () => {
       expect(wrapper.find('.csv-cell__dup-badge').text()).toBe('dup ×2')
     })
   })
+
+  describe('modo de edição inline (cell-editing, T06)', () => {
+    it('RF-01: clique numa célula editable emite "edit-start"', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true } })
+      await wrapper.trigger('click')
+      expect(wrapper.emitted('edit-start')).toEqual([[]])
+    })
+
+    it('RF-01: duplo-clique numa célula editable emite "edit-start"', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true } })
+      await wrapper.trigger('dblclick')
+      expect(wrapper.emitted('edit-start')).toEqual([[]])
+    })
+
+    it('RF-01: clique numa célula NÃO editable não emite "edit-start"', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana' } })
+      await wrapper.trigger('click')
+      await wrapper.trigger('dblclick')
+      expect(wrapper.emitted('edit-start')).toBeUndefined()
+    })
+
+    it('UI-01: em modo editing, o input recebe foco e vem pré-preenchido com o valor atual', async () => {
+      const wrapper = mount(CsvCell, {
+        props: { value: 'ana', editable: true, editing: true },
+        attachTo: document.body,
+      })
+      await wrapper.vm.$nextTick()
+      await wrapper.vm.$nextTick()
+
+      const input = wrapper.find('.csv-cell__input')
+      expect(input.exists()).toBe(true)
+      expect((input.element as HTMLInputElement).value).toBe('ana')
+      expect(document.activeElement).toBe(input.element)
+      wrapper.unmount()
+    })
+
+    it('UI-01: o campo de edição é visualmente distinto do modo de leitura', () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true, editing: true } })
+      expect(wrapper.classes()).toContain('csv-cell--editing')
+      expect(wrapper.find('.csv-cell__input').exists()).toBe(true)
+    })
+
+    it('RF-02: Enter confirma a edição, emitindo "edit-confirm" com o valor digitado', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true, editing: true } })
+      const input = wrapper.find('.csv-cell__input')
+      await input.setValue('ana maria')
+      await input.trigger('keydown', { key: 'Enter' })
+
+      expect(wrapper.emitted('edit-confirm')).toEqual([['ana maria']])
+    })
+
+    it('RF-02: Tab confirma a edição, emitindo "edit-confirm" com o valor digitado', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true, editing: true } })
+      const input = wrapper.find('.csv-cell__input')
+      await input.setValue('42')
+      await input.trigger('keydown', { key: 'Tab' })
+
+      expect(wrapper.emitted('edit-confirm')).toEqual([['42']])
+    })
+
+    it('RF-03: Esc emite "edit-cancel" sem emitir "edit-confirm" e restaura o valor original', async () => {
+      const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true, editing: true } })
+      const input = wrapper.find('.csv-cell__input')
+      await input.setValue('valor alterado')
+      await input.trigger('keydown', { key: 'Escape' })
+
+      expect(wrapper.emitted('edit-cancel')).toEqual([[]])
+      expect(wrapper.emitted('edit-confirm')).toBeUndefined()
+      expect((input.element as HTMLInputElement).value).toBe('ana')
+    })
+
+    describe('invalidEdit (UI-02)', () => {
+      it('renderiza um indicador de erro não-cromático (ícone + texto) quando true', () => {
+        const wrapper = mount(CsvCell, {
+          props: { value: 'ana', editable: true, editing: true, invalidEdit: true },
+        })
+        const indicator = wrapper.find('.csv-cell__invalid-indicator')
+        expect(indicator.exists()).toBe(true)
+        expect(indicator.find('svg').exists()).toBe(true)
+        expect(indicator.find('.csv-cell__invalid-text').text().length).toBeGreaterThan(0)
+      })
+
+      it('não renderiza o indicador quando invalidEdit é false/ausente', () => {
+        const wrapper = mount(CsvCell, { props: { value: 'ana' } })
+        expect(wrapper.find('.csv-cell__invalid-indicator').exists()).toBe(false)
+      })
+    })
+
+    describe('dirty (UI-03)', () => {
+      it('renderiza o indicador de alteração pendente restrito à célula quando true', () => {
+        const wrapper = mount(CsvCell, { props: { value: 'ana', dirty: true } })
+        expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(true)
+      })
+
+      it('não renderiza o indicador quando dirty é false/ausente (padrão)', () => {
+        const wrapper = mount(CsvCell, { props: { value: 'ana' } })
+        expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(false)
+      })
+    })
+  })
 })
