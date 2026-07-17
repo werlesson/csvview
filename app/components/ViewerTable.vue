@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import CsvCell from '~/components/CsvCell.vue'
 import HighlightLegend from '~/components/HighlightLegend.vue'
+import { useCellEditing } from '~/composables/useCellEditing'
 import { isDateLikeColumn, isDateValue, isEmptyCell, parseNumber } from '~/services/columnStats'
 import type { SortDirection, SortKey, ViewerColumn } from '~/composables/useViewer'
 
@@ -362,6 +363,44 @@ const dateLikeColumns = computed<Map<number, boolean>>(() => {
 function invalidDateFor(column: ViewerColumn, value: string | undefined): boolean {
   return (dateLikeColumns.value.get(column.index) ?? false) && !isEmptyCell(value) && !isDateValue(value)
 }
+
+/**
+ * Edição inline por linha visível (`cell-editing`, T07): consome
+ * `useCellEditing()` (T03) e repassa `editable`/`editing`/`invalid-edit`/
+ * `dirty` a cada `CsvCell` (T06), chamando `beginEdit`/`confirmEdit`/
+ * `cancelEdit` a partir dos emits `edit-start`/`edit-confirm`/`edit-cancel`.
+ * `rowIndex` é a posição da linha dentro de `rows` (já filtrada/ordenada por
+ * `useViewer`) — nenhum emit/prop de multi-seleção, paste ou estrutura é
+ * adicionado (RF-14).
+ */
+const { editingCell, validationError, beginEdit, confirmEdit, cancelEdit, isDirty } =
+  useCellEditing()
+
+/** A célula na linha/coluna indicadas está em modo de edição (RF-01). */
+function isEditingCell(rowIndex: number, columnIndex: number): boolean {
+  const editing = editingCell.value
+  return editing !== null && editing.rowIndex === rowIndex && editing.columnIndex === columnIndex
+}
+
+/** A célula em edição teve sua última confirmação rejeitada por validação de tipo (RF-04, UI-02). */
+function isInvalidEditCell(rowIndex: number, columnIndex: number): boolean {
+  return isEditingCell(rowIndex, columnIndex) && validationError.value !== null
+}
+
+/** `edit-start` (RF-01): entra em modo de edição só na célula clicada. */
+function onEditStart(rowIndex: number, columnIndex: number): void {
+  beginEdit(rowIndex, columnIndex)
+}
+
+/** `edit-confirm` (RF-02/RF-04): confirma o valor digitado na célula em edição. */
+function onEditConfirm(value: string): void {
+  confirmEdit(value)
+}
+
+/** `edit-cancel` (RF-03): cancela a edição em andamento, sem tocar no histórico. */
+function onEditCancel(): void {
+  cancelEdit()
+}
 </script>
 
 <template>
@@ -497,6 +536,13 @@ function invalidDateFor(column: ViewerColumn, value: string | undefined): boolea
             :dup-count="dupCountFor(column, rows[virtualRow.index]?.[column.index])"
             :negative="negativeFor(column, rows[virtualRow.index]?.[column.index])"
             :invalid-date="invalidDateFor(column, rows[virtualRow.index]?.[column.index])"
+            editable
+            :editing="isEditingCell(virtualRow.index, column.index)"
+            :invalid-edit="isInvalidEditCell(virtualRow.index, column.index)"
+            :dirty="isDirty(virtualRow.index, column.index)"
+            @edit-start="onEditStart(virtualRow.index, column.index)"
+            @edit-confirm="onEditConfirm"
+            @edit-cancel="onEditCancel"
           />
         </tr>
       </tbody>
