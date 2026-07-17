@@ -112,6 +112,11 @@ function onOpenExport(): void {
   showExport.value = true
 }
 
+/** Navega para a tela de comparação (RF-02, T07) — nenhuma outra mudança de estado do Viewer. */
+function onOpenCompare(): void {
+  navigateTo('/compare')
+}
+
 /** Só os filtros que restringem linhas (não-inertes) acionam a mensagem/ação de "limpar filtros" no estado vazio. */
 const hasActiveFilters = computed(() => activeFilters.value.length > 0)
 </script>
@@ -130,6 +135,7 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       @toggle-pin="togglePin"
       @toggle-filters="onToggleFilters"
       @open-export="onOpenExport"
+      @open-compare="onOpenCompare"
       @undo="onUndo"
       @redo="onRedo"
       @save-new-version="onSaveNewVersion"

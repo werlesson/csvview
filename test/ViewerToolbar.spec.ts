@@ -62,6 +62,19 @@ describe('ViewerToolbar', () => {
     expect(wrapper.emitted('toggle-column')).toBeUndefined()
   })
 
+  // RF-02, T07: entrada "Comparar" na toolbar do Viewer.
+  it('apresenta o botão "Comparar" e emite "open-compare" exatamente uma vez ao clicar, sem alterar outro estado', async () => {
+    const wrapper = mountToolbar()
+    expect(wrapper.text()).toContain('Comparar')
+
+    await wrapper.find('.toolbar__compare').trigger('click')
+
+    expect(wrapper.emitted('open-compare')).toEqual([[]])
+    expect(wrapper.emitted('open-export')).toBeUndefined()
+    expect(wrapper.emitted('toggle-filters')).toBeUndefined()
+    expect(wrapper.emitted('update:search')).toBeUndefined()
+  })
+
   // UI-02: badge de contagem no controle "Filtros".
   it('renderiza o badge "2" no controle Filtros quando activeFilterCount=2', () => {
     const wrapper = mountToolbar({ activeFilterCount: 2 })
