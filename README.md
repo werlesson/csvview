@@ -38,9 +38,14 @@
 | 🧭 **Detecção automática** | Delimitador (`,` `;` tab), BOM e linhas irregulares são tratados na hora do parse; colunas curtas são normalizadas contra o cabeçalho. |
 | 🖥️ **Tabela virtualizada** | Renderização com `@tanstack/vue-virtual` — só o que está na viewport vai para o DOM, então rolar 1 milhão de linhas é tão liso quanto rolar 10. |
 | 🔍 **Busca + ordenação** | Busca global instantânea sobre todas as colunas e ordenação multi-coluna, tudo reativo e computado em memória. |
-| 📌 **Colunas sob controle** | Fixe, reordene e oculte colunas — o layout da tabela é seu. |
-| 🧮 **Estatísticas por coluna** | Nulos, únicos, duplicados, preenchimento, mín/máx/média e um mini-histograma de distribuição, por coluna selecionada. |
-| 💾 **Arquivos recentes** | Cada arquivo aberto é persistido em IndexedDB — reabra em um clique, com nome, contagem de linhas, tamanho e "há quanto tempo". |
+| 📌 **Colunas sob controle** | Fixe, redimensione, reordene e oculte colunas — o layout da tabela é seu. |
+| 🧮 **Estatísticas por coluna** | Tipo inferido (número, data, booleano, e-mail, URL), nulos, únicos, duplicados, preenchimento, mín/máx/média/mediana e um mini-histograma de distribuição, por coluna selecionada. |
+| 🧰 **Filtros por coluna** | Operadores combináveis por tipo de dado (igual, contém, maior/menor, entre, intervalo de datas, vazio/preenchido) — combine quantos quiser, com feedback imediato de quantas linhas casaram. |
+| 🚨 **Destaques automáticos** | Células vazias, valores duplicados, números negativos e datas inválidas são realçados na tabela sem nenhuma configuração — legenda fixa no topo. |
+| ✏️ **Edição com desfazer/refazer** | Edite células inline com validação por tipo; desfazer/refazer cobre tanto edições de célula quanto reordenação de coluna numa única pilha cronológica — "Salvar nova versão" ou "Sobrescrever original" gravam o arquivo com a ordem de colunas vigente. |
+| 🆚 **Comparação de arquivos** | Abra um segundo CSV lado a lado e veja o diff: registros adicionados, removidos, alterados e inalterados, pareados por coluna-chave ou por posição. |
+| 📤 **Exportação** | CSV, JSON, Markdown, SQL (`INSERT`) e XLSX, respeitando filtros ativos e colunas visíveis/ocultas. |
+| 💾 **Arquivos recentes + sessão** | Cada arquivo aberto é persistido em IndexedDB (LRU de 10) — reabra em um clique e retome de onde parou: busca, filtros, ordenação e colunas voltam exatamente como estavam. |
 | 🌗 **Tema claro/escuro** | Dark por padrão, com preferência persistida entre sessões. |
 | 🔒 **Zero backend** | `ssr:false`, sem rotas de API, sem chamadas de rede. Nada do conteúdo do seu arquivo sai da máquina — nem por acidente. |
 
@@ -49,13 +54,15 @@
 ```mermaid
 flowchart LR
     A["Arraste ou selecione<br>um .csv / .tsv / .txt"] --> B["Web Worker<br>parseia em streaming"]
-    B --> C["IndexedDB<br>guarda arquivo + recentes"]
-    C --> D["Viewer<br>busca · ordenação · colunas fixas"]
-    D --> E["Estatísticas da coluna<br>+ histograma"]
+    B --> C["IndexedDB<br>guarda arquivo + sessão"]
+    C --> D["Viewer<br>busca · filtros · ordenação · colunas"]
+    D --> E["Editar células<br>desfazer/refazer · salvar"]
+    D --> F["Comparar<br>com um segundo arquivo"]
+    D --> G["Exportar<br>CSV/JSON/MD/SQL/XLSX"]
 ```
 
-Todo o pipeline roda no navegador: **abrir → parsear → persistir → explorar**. Não há
-`server/`, não há API, não há upload — só o seu arquivo e a sua máquina.
+Todo o pipeline roda no navegador: **abrir → parsear → persistir → explorar → editar/comparar/exportar**.
+Não há `server/`, não há API, não há upload — só o seu arquivo e a sua máquina.
 
 ## 🎨 Design system
 
@@ -109,19 +116,22 @@ yarn dev       # http://localhost:3000
 ```
 csvview/
 ├─ app/
-│  ├─ pages/          # index.vue (Upload) · viewer.vue (Visualizador)
+│  ├─ pages/          # index.vue (Upload) · viewer.vue (Visualizador) · compare.vue (Comparação)
 │  ├─ layouts/         # shell com header, logo e toggle de tema
-│  ├─ components/      # Dropzone, ViewerTable, StatsPanel, ColumnChip...
-│  ├─ composables/      # useCsvParser, useViewer, useFilesStore, useTheme...
-│  ├─ services/         # csvParser, columnStats, formatFile — puros, sem framework
+│  ├─ components/      # Dropzone, ViewerTable, StatsPanel, ColumnChip, FilterPanel,
+│  │                    # CompareTable, SaveCopyModal, UnsavedChangesModal, HighlightLegend...
+│  ├─ composables/      # useCsvParser, useViewer, useCellEditing, useSaveVersion,
+│  │                    # useUnsavedChangesGuard, useComparisonDatasets, useFilesStore, useTheme...
+│  ├─ services/         # csvParser, columnStats, columnFilters, diffDatasets,
+│  │                    # exportData, exportXlsx, formatFile — puros, sem framework
 │  └─ assets/css/       # main.css — tokens de design (cores, raios, fontes)
 ├─ test/                # specs Vitest (componentes, composables, serviços)
 ├─ public/              # logo.svg e estáticos servidos sem processamento
 └─ docs/agents/          # documentação gerada para agentes de IA
 ```
 
-> Regra de arquitetura: lógica de domínio (parsing, estatísticas, formatação) vive isolada
-> em `app/services/`, sem dependência de Vue — 100% testável em isolamento.
+> Regra de arquitetura: lógica de domínio (parsing, estatísticas, filtros, diff, exportação)
+> vive isolada em `app/services/`, sem dependência de Vue — 100% testável em isolamento.
 
 ## 🧪 Testes
 
@@ -134,12 +144,16 @@ real é necessário. Cobre componentes, composables e os serviços de parsing/es
 
 ## 🗺️ Roadmap
 
-Além do viewer, o design system já prevê:
+O produto principal (visualização, tipos/estatísticas, filtros, exportação, destaques, edição
+com desfazer/refazer, sessão persistida e comparação de arquivos) já está implementado. Em
+avaliação para os próximos ciclos:
 
-- [ ] **Filtros avançados** — múltiplas condições combinadas por coluna *(em desenvolvimento)*
-- [ ] **Exportação** — CSV, JSON, XLSX, Markdown e SQL, com escopo de linhas filtradas ou todas
-- [ ] **Comparação de arquivos** — diff lado a lado entre duas versões de um CSV
-- [ ] **Destaques condicionais** — realce automático de células vazias, duplicadas, negativas ou com datas inválidas
+- [ ] **Consultas SQL** — rodar SQL sobre o dataset via DuckDB WASM
+- [ ] **Gráficos e dashboards** — visualizações automáticas por coluna, combináveis em painéis
+- [ ] **União de arquivos** — merge de múltiplos CSVs
+- [ ] **Qualidade de dados** — detecção automática de inconsistências
+- [ ] **Assistente de IA** — explicar datasets, gerar filtros e identificar padrões em linguagem natural
+- [ ] **PWA offline** e **versão desktop** (Tauri)
 
 ## 📄 Licença
 

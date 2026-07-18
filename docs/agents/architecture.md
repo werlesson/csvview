@@ -13,23 +13,28 @@ Component-based Vue 3 SPA on Nuxt 4 conventions (`srcDir: app/`), organized as U
 ├── app/                       # Nuxt srcDir — all application code
 │   ├── app.vue                # root component: useTheme() + NuxtLayout/NuxtPage
 │   ├── assets/css/main.css    # Tailwind v4 entrypoint (@import "tailwindcss")
-│   ├── components/            # 20 Vue SFCs: presentational + domain (CsvCell,
+│   ├── components/            # 26 Vue SFCs: presentational + domain (CsvCell,
 │   │                          #   ViewerTable, ViewerToolbar, StatsPanel,
 │   │                          #   StatsHistogram, RecentFiles, Dropzone, ThemeToggle,
 │   │                          #   ExportModal, FilterPanel, FilterChips,
 │   │                          #   HighlightLegend, Badge, Button, ColumnChip,
-│   │                          #   Dropdown, LogoMark, SearchInput, Select, Tooltip)
-│   ├── composables/           # 13 composables: useCsvParser, useCurrentDataset,
+│   │                          #   Dropdown, LogoMark, SearchInput, Select, Tooltip,
+│   │                          #   ConfirmModal, SaveCopyModal, UnsavedChangesModal,
+│   │                          #   CompareFileSelector, CompareSummary, CompareTable)
+│   ├── composables/           # 15 composables: useCsvParser, useCurrentDataset,
 │   │                          #   useDatabase, useFilesStore, useOpenFile,
 │   │                          #   useSettingsStore, useTheme, useViewer,
 │   │                          #   useSessionStore, useViewerSession,
-│   │                          #   useCellEditing, useSaveVersion, useExportModal
+│   │                          #   useCellEditing, useSaveVersion, useExportModal,
+│   │                          #   useUnsavedChangesGuard, useComparisonDatasets
 │   ├── layouts/default.vue    # default Nuxt layout
-│   ├── pages/                 # index.vue (Upload), viewer.vue (Viewer) — file-based routes
-│   └── services/              # 9 files: csvParser.ts, csvParser.worker.ts,
+│   ├── pages/                 # index.vue (Upload), viewer.vue (Viewer),
+│   │                          #   compare.vue (file comparison) — file-based routes
+│   └── services/              # 10 files: csvParser.ts, csvParser.worker.ts,
 │                               #   columnStats.ts, columnFilters.ts, viewerSession.ts,
 │                               #   exportData.ts, exportXlsx.ts, filterLabels.ts,
-│                               #   formatFile.ts — pure, framework-free domain logic
+│                               #   formatFile.ts, diffDatasets.ts — pure,
+│                               #   framework-free domain logic
 ├── public/                    # static assets (favicon, logo, robots.txt)
 ├── scripts/ralph.sh           # repo automation script, not part of the app runtime
 ├── test/                      # Vitest specs, 1:1 with components/composables/services,
@@ -44,10 +49,10 @@ Component-based Vue 3 SPA on Nuxt 4 conventions (`srcDir: app/`), organized as U
 ### Layer responsibilities
 | Layer | Owns | Does NOT own |
 | --- | --- | --- |
-| `app/services/` | Pure domain logic: CSV/TSV parsing (`csvParser.ts`), column type inference + stats (`columnStats.ts`), column filter predicates (`columnFilters.ts`), session snapshot serialize/deserialize (`viewerSession.ts`), export content generators (`exportData.ts`, `exportXlsx.ts`), filter UI labels (`filterLabels.ts`), file-metadata formatting (`formatFile.ts`) | Vue reactivity, DOM, browser APIs (no `ref`/`computed` imports) |
-| `app/composables/` | Reactive state + orchestration: parse orchestration (`useCsvParser`), IndexedDB schema/access (`useDatabase`, `useFilesStore`, `useSettingsStore`, `useSessionStore`), current dataset + in-place cell mutation (`useCurrentDataset`), viewer derived state (`useViewer`), session restore/debounced write (`useViewerSession`), cell edit + undo/redo (`useCellEditing`), edited-dataset persistence (`useSaveVersion`), export modal orchestration (`useExportModal`), open-file workflow (`useOpenFile`), theme (`useTheme`) | Rendering/markup, direct DOM manipulation beyond `document.documentElement` (theme) |
-| `app/components/` | Presentational + domain-aware Vue SFCs (props in, events out); e.g. `ViewerTable.vue` virtualizes rows via `@tanstack/vue-virtual`, `StatsPanel.vue` renders `ColumnStats`, `FilterPanel.vue`/`FilterChips.vue` edit/display `ColumnFilter[]`, `ExportModal.vue` drives `useExportModal`, `CsvCell.vue` drives `useCellEditing` | Persistence, parsing, business rules (delegated to composables/services) |
-| `app/pages/` | Route-level composition: `index.vue` wires `Dropzone` + `RecentFiles` + `useOpenFile`; `viewer.vue` wires `ViewerToolbar` + `ViewerTable` + `StatsPanel` + `FilterPanel`/`FilterChips` + `ExportModal` + `useViewer` + `useViewerSession` + `useCellEditing` + `useSaveVersion` | Reusable UI (delegated to `components/`) |
+| `app/services/` | Pure domain logic: CSV/TSV parsing (`csvParser.ts`, incl. `orderedColumnIndices` — pinned+order projection shared with `useSaveVersion`), column type inference + stats (`columnStats.ts`), column filter predicates (`columnFilters.ts`), session snapshot serialize/deserialize (`viewerSession.ts`), export content generators (`exportData.ts`, `exportXlsx.ts`), filter UI labels (`filterLabels.ts`), file-metadata formatting (`formatFile.ts`), two-dataset diff engine (`diffDatasets.ts` — `pairByKey`/`pairByPosition`, type-aware `valuesEqual`) | Vue reactivity, DOM, browser APIs (no `ref`/`computed` imports) |
+| `app/composables/` | Reactive state + orchestration: parse orchestration (`useCsvParser`), IndexedDB schema/access (`useDatabase`, `useFilesStore`, `useSettingsStore`, `useSessionStore`), current dataset + in-place cell mutation (`useCurrentDataset`), viewer derived state (`useViewer`), session restore/debounced write (`useViewerSession`), unified cell-edit + column-reorder undo/redo (`useCellEditing`), edited-dataset persistence (`useSaveVersion`), navigation guard for unsaved changes (`useUnsavedChangesGuard`), parallel comparison-dataset state (`useComparisonDatasets`, never persists dataset B), export modal orchestration (`useExportModal`), open-file workflow (`useOpenFile`), theme (`useTheme`) | Rendering/markup, direct DOM manipulation beyond `document.documentElement` (theme) |
+| `app/components/` | Presentational + domain-aware Vue SFCs (props in, events out); e.g. `ViewerTable.vue` virtualizes rows via `@tanstack/vue-virtual`, `StatsPanel.vue` renders `ColumnStats`, `FilterPanel.vue`/`FilterChips.vue` edit/display `ColumnFilter[]`, `ExportModal.vue` drives `useExportModal`, `CsvCell.vue` drives `useCellEditing`, `UnsavedChangesModal.vue`/`SaveCopyModal.vue`/`ConfirmModal.vue` drive `useUnsavedChangesGuard`, `CompareFileSelector.vue`/`CompareSummary.vue`/`CompareTable.vue` drive `useComparisonDatasets` | Persistence, parsing, business rules (delegated to composables/services) |
+| `app/pages/` | Route-level composition: `index.vue` wires `Dropzone` + `RecentFiles` + `useOpenFile`; `viewer.vue` wires `ViewerToolbar` + `ViewerTable` + `StatsPanel` + `FilterPanel`/`FilterChips` + `ExportModal` + `useViewer` + `useViewerSession` + `useCellEditing` (incl. `registerColumnOrderState`) + `useSaveVersion` + `useUnsavedChangesGuard`; `compare.vue` wires `CompareFileSelector` + `CompareSummary` + `CompareTable` + `useComparisonDatasets` | Reusable UI (delegated to `components/`) |
 | `nuxt.config.ts` | Build/runtime config: SSR toggle, Nitro preset, Tailwind Vite plugin, global CSS, page title | Env/secrets (none declared; `env_vars: []`) |
 | `test/` | Vitest specs, one per component/composable/service | Production code |
 
@@ -138,6 +143,41 @@ serializeViewerSession(snapshot, columnCount) -> SessionPayload
         v
 useSessionStore.saveSession({fileId:id, updated_at:Date.now(), ...payload})
   [IndexedDB 'sessions', db.put -- failures only console.error, never throw to UI]
+```
+
+### Macro flow: File comparison (dataset B, never persisted)
+```
+viewer.vue "Comparar" --guardNavigation('/compare')--> compare.vue
+        |
+        v
+useCurrentDataset() [dataset A, readonly passthrough -- untouched]
+        |
+        v
+CompareFileSelector.vue --select(File) | open-recent(id)--> useComparisonDatasets()
+        |
+        +-------------------------+-------------------------+
+        |                                                    |
+   openFileB(file)                                    reopenRecentB(id)
+        |                                                    |
+   file.text()                                    filesStore.getFile(id)  [read-only]
+        |                                                    |
+        +-------------------- parser.parseText() [same Worker as A] --------+
+                         |
+              exceedsCeiling(size, rows)?  --yes--> comparisonError (~50MB/~1M rows), abort
+                         | no
+                         v
+        datasetB.value = {header, rows}; metaB.value = {...}   [module ref, NEVER saveFile()]
+                         |
+                         v
+        availableKeyColumns = commonKeyColumns(headerA, headerB)
+                         |
+                         v
+        result = diffDatasets(datasetA, datasetB, {keyColumn})
+           |-- pairByKey(keyColumn) or pairByPosition() (no common key selected)
+           |-- diffRecord() per pair -> added | removed | changed | unchanged
+                         |
+                         v
+        CompareSummary.vue [counts]  +  CompareTable.vue [records, "Somente diferenças" filter]
 ```
 
 ## Related documents

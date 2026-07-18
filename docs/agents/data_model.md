@@ -25,6 +25,8 @@ Defined in `app/composables/useDatabase.ts:43-62`. Key path `id` (auto-increment
 
 Invariant: at most `MAX_RECENT_FILES = 10` records kept (`app/composables/useFilesStore.ts:19`). `saveFile()` evicts the oldest-by-`last_opened_at` record(s) via cursor walk over the `last_opened_at` index whenever the store exceeds the cap (`useFilesStore.ts:67-75`), deleting the paired `SessionRecord` for each evicted `id` in the same `['files','sessions']` transaction. `touchFile()` updates `last_opened_at` to move a record back to the top on reopen (`useFilesStore.ts:114-129`). `overwriteFile(id, patch)` replaces `content`/`delimiter`/`size_bytes`/`row_count`/`column_count` in place, preserving `id`/`created_at` (`useFilesStore.ts:137-167`, consumed by `useSaveVersion.overwriteOriginal()`).
 
+`content` written by `useSaveVersion` (`saveNewVersion()`/`overwriteOriginal()`) is `serializeCurrent()`'s output: header + rows re-projected through the dataset's **current** column order via `orderedColumnIndices(columnCount, order, pinned)` (`app/services/csvParser.ts:236-252`), not the header's original sequence — a reordered/pinned Viewer layout is what gets persisted on save (`app/composables/useSaveVersion.ts`).
+
 #### `SettingRecord` (object store `settings`)
 Defined in `app/composables/useDatabase.ts:65-72`. Key path `key`.
 
@@ -77,7 +79,8 @@ Example `SessionRecord` shape (`test/useSessionStore.spec.ts`-style fixture):
 ### Cache
 - `useCurrentDataset.ts:36-37` holds the currently loaded `Dataset`/`DatasetMeta` as module-scope `ref`s — an in-memory (non-persisted) cache that survives navigation between Upload and Viewer without re-parsing, cleared via `clearDataset()`. `updateCell()` mutates `dataset.value.rows[rowIndex][columnIndex]` in place (`useCurrentDataset.ts:59-65`), the substrate `useCellEditing.ts` writes through.
 - `useViewer.ts` holds session-only view state (search term, hidden columns, sort keys, column widths/order/pins, column filters) as `ref`s scoped to each `useViewer()` call; six of those refs (`filters`, `sortKeys`, `hidden`, `widths`, `order`, `pinned`) are the ones `useViewerSession.ts` mirrors into the `sessions` store — the composable itself still does no IndexedDB I/O (no `idb`/`useDatabase` import in `useViewer.ts`).
-- `useCellEditing.ts:50-53` holds the undo/redo stacks (`undoStack`, `redoStack`) as module-scope `ref`s — in-memory only, reset on dataset switch, never persisted to IndexedDB.
+- `useCellEditing.ts:71-79` holds the undo/redo stacks (`undoStack`, `redoStack`, discriminated `kind:'cell'|'reorder'`) plus `savedPosition` as module-scope `ref`s — in-memory only, reset on dataset object swap, never persisted to IndexedDB.
+- `useComparisonDatasets.ts:50-55` holds the comparison "dataset B" (`datasetB`, `metaB`, `keyColumn`, `comparisonError`, `isOpeningB`, `progressB`) as module-scope `ref`s — always in-memory, **never** written to the `files` store even when opened from a recent-file id (`reopenRecentB` only reads `filesStore.getFile()`); cleared whenever dataset A's `meta.id` changes.
 
 ## Related documents
 

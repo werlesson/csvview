@@ -5,14 +5,14 @@
 ## AS IS — Current state
 
 ### Purpose
-CSV View is a 100%-client-side Nuxt 4 SPA that opens, browses, sorts, filters, and computes column statistics for large CSV/TSV/TXT files entirely in the browser, without sending data to any server (`app/pages/index.vue`: "100% no navegador · seus dados não saem daqui"; `nuxt.config.ts:8` "ssr: false").
+CSV View is a 100%-client-side Nuxt 4 SPA that opens, browses, sorts, filters, edits, computes column statistics for, and compares (file-vs-file diff) large CSV/TSV/TXT files entirely in the browser, without sending data to any server (`app/pages/index.vue`: "100% no navegador · seus dados não saem daqui"; `nuxt.config.ts:12` "ssr: false").
 
 ### Consumers and integrations
 | System | Role |
 | --- | --- |
 | Browser (SPA runtime) | Hosts the entire app; `ssr:false` + Nitro `preset:'static'` (`nuxt.config.ts:12-15`) — no server process at runtime |
-| Web Worker (`app/services/csvParser.worker.ts`) | Runs CSV parsing off the main thread, spawned by `useCsvParser.ts` |
-| IndexedDB (browser) | Persists opened files, preferences, and per-file Viewer session state via `idb` — stores `files`/`settings`/`sessions`, `DB_VERSION = 2` (`app/composables/useDatabase.ts`) |
+| Web Worker (`app/services/csvParser.worker.ts`) | Runs CSV parsing off the main thread, spawned by `useCsvParser.ts`; reused as-is by `useComparisonDatasets.ts` to parse the second (comparison) file |
+| IndexedDB (browser) | Persists opened files, preferences, and per-file Viewer session state via `idb` — stores `files`/`settings`/`sessions`, `DB_VERSION = 2` (`app/composables/useDatabase.ts`); dataset B in the comparison flow is never written here (`useComparisonDatasets.ts` header comment, CT-01) |
 | `xlsx` (SheetJS, dynamic `import()`) | Generates `.xlsx` workbooks on demand inside `app/services/exportXlsx.ts:50`, kept out of the eager route bundle |
 | Vitest + happy-dom + fake-indexeddb | Test harness for components, composables, and services (`test/*.spec.ts`) |
 
@@ -27,10 +27,12 @@ No external HTTP APIs, backend services, or third-party network calls are wired 
 6. `useViewer()` derives column types (`inferColumnType`), search+filter-matched rows (`matchesFilters`, `app/services/columnFilters.ts`), multi-key sort, column widths/pins/order — all reactive `computed`s over the in-memory dataset; `ViewerTable.vue` renders it virtualized via `@tanstack/vue-virtual` (`ROW_HEIGHT = 40`, `overscan: 12`).
 7. `useViewerSession()` restores any persisted `SessionRecord` for the loaded file's `id` on mount/dataset-change and writes it back debounced (300 ms default) on every filter/sort/hidden/width/order/pinned mutation (`app/composables/useViewerSession.ts`); a `columnCount` mismatch discards the record instead of applying stale indexes.
 8. Selecting a column (`selectColumn`) computes `ColumnStats` via `app/services/columnStats.ts` and renders them in `StatsPanel.vue` (+ `StatsHistogram.vue` for numeric columns).
-9. Double-clicking a cell (`CsvCell.vue`) opens `useCellEditing().beginEdit()`; `confirmEdit()` validates the new value against the column's inferred type before mutating `dataset.value` in place via `useCurrentDataset().updateCell()`, pushing one entry onto an in-memory undo stack (`app/composables/useCellEditing.ts`).
-10. `useSaveVersion()` persists edits either as a new `files` record (`saveNewVersion()`, never reuses the original `id`) or by overwriting the original record's `content` (`overwriteOriginal()`), both via `stringifyDataset()`/`useFilesStore()` (`app/composables/useSaveVersion.ts`).
-11. `useExportModal().download()` projects `displayColumns` over the filtered-or-all row scope and serializes to CSV/JSON/Markdown/SQL (`app/services/exportData.ts`) or XLSX (`app/services/exportXlsx.ts`, dynamic-imported `xlsx`), then triggers a client-side `Blob` download — no network round-trip.
-12. Terminal state: rendered/interactive DOM in the browser; persisted artifacts are the IndexedDB `files`/`settings`/`sessions` records or a downloaded export file — no data leaves the machine.
+9. Double-clicking a cell (`CsvCell.vue`) opens `useCellEditing().beginEdit()`; `confirmEdit()` validates the new value against the column's inferred type before mutating `dataset.value` in place via `useCurrentDataset().updateCell()`, pushing one `{kind:'cell'}` entry onto a shared in-memory undo stack; dragging a column to reorder it pushes a `{kind:'reorder'}` entry via `pushReorderEntry()` instead, through the `registerColumnOrderState()` integration point wired once in `viewer.vue` (`app/composables/useCellEditing.ts`).
+10. Navigating away from the Viewer (logo/"Voltar" in `default.vue`, "Comparar" in `viewer.vue`) while `hasUnsavedChanges` is true is intercepted by `useUnsavedChangesGuard().guardNavigation()`, which opens `UnsavedChangesModal.vue` (save-as-copy / overwrite / discard / cancel) and, for the save-as-copy path, `SaveCopyModal.vue` for naming (`app/composables/useUnsavedChangesGuard.ts`).
+11. `useSaveVersion()` persists edits either as a new `files` record (`saveNewVersion()`, never reuses the original `id`) or by overwriting the original record's `content` (`overwriteOriginal()`); `serializeCurrent()` projects `header`/`rows` through the dataset's **current** column order (`orderedColumnIndices()`, `app/services/csvParser.ts`) before `stringifyDataset()`/`useFilesStore()` writes it (`app/composables/useSaveVersion.ts`).
+12. `useExportModal().download()` projects `displayColumns` over the filtered-or-all row scope and serializes to CSV/JSON/Markdown/SQL (`app/services/exportData.ts`) or XLSX (`app/services/exportXlsx.ts`, dynamic-imported `xlsx`), then triggers a client-side `Blob` download — no network round-trip.
+13. From the Viewer, "Comparar" navigates to `app/pages/compare.vue`, which stays on dataset A (`useCurrentDataset()` passthrough) and opens a second file as dataset B via `useComparisonDatasets().openFileB()`/`reopenRecentB()` — same parser/Worker as A, but never persisted to `files`; `diffDatasets()` (`app/services/diffDatasets.ts`) pairs records by a chosen key column (or by position) and classifies each as `added`/`removed`/`changed`/`unchanged`, rendered by `CompareSummary.vue` + `CompareTable.vue`.
+14. Terminal state: rendered/interactive DOM in the browser; persisted artifacts are the IndexedDB `files`/`settings`/`sessions` records or a downloaded export file — no data leaves the machine.
 
 ### Out of scope
 - Server-side rendering / API routes — `ssr: false`, no `server/` directory, no `api_surface` evidence (digest `api_surface.present=false`).
