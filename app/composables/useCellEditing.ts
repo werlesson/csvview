@@ -1,4 +1,4 @@
-import { computed, readonly, ref, watch } from 'vue'
+import { computed, readonly, ref, watch, type Ref } from 'vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import {
   columnValues,
@@ -47,15 +47,61 @@ export interface CellEditEntry {
   nextValue: string
 }
 
+/**
+ * Uma entrada de histórico de reordenação de coluna (CT-01): snapshot
+ * completo de `order`/`pinned` antes e depois de um gesto de arraste
+ * concluído — nunca `from`/`to`, que ficariam frágeis contra um estado atual
+ * possivelmente diferente do momento em que o gesto ocorreu.
+ */
+export interface ReorderHistoryEntry {
+  kind: 'reorder'
+  previousOrder: number[]
+  previousPinned: number[]
+  nextOrder: number[]
+  nextPinned: number[]
+}
+
+/**
+ * Entrada discriminada da pilha compartilhada de undo/redo (CT-01, CT-02):
+ * edição de célula (`kind: 'cell'`, formato inalterado de `CellEditEntry`) ou
+ * reordenação de coluna (`kind: 'reorder'`).
+ */
+export type HistoryEntry = ({ kind: 'cell' } & CellEditEntry) | ReorderHistoryEntry
+
 const editingCell = ref<EditingCell | null>(null)
 const validationError = ref<string | null>(null)
-const undoStack = ref<CellEditEntry[]>([])
-const redoStack = ref<CellEditEntry[]>([])
+const undoStack = ref<HistoryEntry[]>([])
+const redoStack = ref<HistoryEntry[]>([])
 /**
  * `undoStack.length` no momento do último `markSaved()` — a "posição salva"
  * na linha do tempo de undo/redo. Ver {@link hasUnsavedChanges}.
  */
 const savedPosition = ref(0)
+
+/**
+ * Ponteiros de módulo para os refs `order`/`pinned` da instância de
+ * `useViewer()` renderizada em `viewer.vue` — ponto de integração explícito
+ * de CT-02, atribuídos por {@link registerColumnOrderState}. `null` fora de
+ * uma sessão de Viewer montada (ex.: antes do primeiro registro, ou após um
+ * reset de dataset).
+ */
+let columnOrderRef: Ref<number[]> | null = null
+let columnPinnedRef: Ref<Set<number>> | null = null
+
+/**
+ * Registra os refs mutáveis de `order`/`pinned` de `useViewer()` como o
+ * destino de undo/redo de entradas `reorder` (CT-02). Chamado uma única vez
+ * por `viewer.vue`, logo após instanciar `useViewer(...)` — os MESMOS refs
+ * retornados por `useViewer`, nunca cópias, para que undo/redo mutem o
+ * estado que a tabela efetivamente renderiza.
+ */
+export function registerColumnOrderState(
+  order: Ref<number[]>,
+  pinned: Ref<Set<number>>,
+): void {
+  columnOrderRef = order
+  columnPinnedRef = pinned
+}
 
 /**
  * Reseta as pilhas e o estado de edição em andamento sempre que o objeto
@@ -74,6 +120,8 @@ watch(
     undoStack.value = []
     redoStack.value = []
     savedPosition.value = 0
+    columnOrderRef = null
+    columnPinnedRef = null
   },
   { flush: 'sync' },
 )
@@ -151,7 +199,7 @@ export function useCellEditing() {
     updateCell(rowIndex, columnIndex, value)
     undoStack.value = [
       ...undoStack.value,
-      { rowIndex, columnIndex, previousValue, nextValue: value },
+      { kind: 'cell', rowIndex, columnIndex, previousValue, nextValue: value },
     ]
     redoStack.value = []
     validationError.value = null
@@ -159,30 +207,63 @@ export function useCellEditing() {
     return true
   }
 
-  /** Desfaz a edição confirmada mais recente (RF-06). Inerte sem entradas (RF-09). */
+  /**
+   * Empilha uma entrada de reordenação de coluna (RF-01, CT-01), com o
+   * snapshot completo de `order`/`pinned` antes/depois de um gesto de
+   * arraste concluído, e esvazia `redoStack` (RF-04) — mesmo padrão de
+   * `confirmEdit`. Chamado pelo ponto de integração de `viewer.vue` (T04)
+   * após comparar que a ordem resultante difere da anterior.
+   */
+  function pushReorderEntry(
+    previousOrder: number[],
+    previousPinned: number[],
+    nextOrder: number[],
+    nextPinned: number[],
+  ): void {
+    undoStack.value = [
+      ...undoStack.value,
+      { kind: 'reorder', previousOrder, previousPinned, nextOrder, nextPinned },
+    ]
+    redoStack.value = []
+  }
+
+  /** Desfaz a ação confirmada mais recente (RF-06, RF-02). Inerte sem entradas (RF-09). */
   function undo(): void {
     const entries = undoStack.value
     if (entries.length === 0) return
     const entry = entries[entries.length - 1]!
     undoStack.value = entries.slice(0, -1)
-    updateCell(entry.rowIndex, entry.columnIndex, entry.previousValue)
+    if (entry.kind === 'cell') {
+      updateCell(entry.rowIndex, entry.columnIndex, entry.previousValue)
+    } else if (columnOrderRef && columnPinnedRef) {
+      columnOrderRef.value = entry.previousOrder
+      columnPinnedRef.value = new Set(entry.previousPinned)
+    }
     redoStack.value = [...redoStack.value, entry]
   }
 
-  /** Refaz a edição desfeita mais recente (RF-07). Inerte sem entradas (RF-09). */
+  /** Refaz a ação desfeita mais recente (RF-07, RF-03). Inerte sem entradas (RF-09). */
   function redo(): void {
     const entries = redoStack.value
     if (entries.length === 0) return
     const entry = entries[entries.length - 1]!
     redoStack.value = entries.slice(0, -1)
-    updateCell(entry.rowIndex, entry.columnIndex, entry.nextValue)
+    if (entry.kind === 'cell') {
+      updateCell(entry.rowIndex, entry.columnIndex, entry.nextValue)
+    } else if (columnOrderRef && columnPinnedRef) {
+      columnOrderRef.value = entry.nextOrder
+      columnPinnedRef.value = new Set(entry.nextPinned)
+    }
     undoStack.value = [...undoStack.value, entry]
   }
 
   /** `true` quando a célula tem ao menos uma edição desfazível pendente (UI-03). */
   function isDirty(rowIndex: number, columnIndex: number): boolean {
     return undoStack.value.some(
-      (entry) => entry.rowIndex === rowIndex && entry.columnIndex === columnIndex,
+      (entry) =>
+        entry.kind === 'cell' &&
+        entry.rowIndex === rowIndex &&
+        entry.columnIndex === columnIndex,
     )
   }
 
@@ -219,5 +300,9 @@ export function useCellEditing() {
     redo,
     isDirty,
     markSaved,
+    registerColumnOrderState,
+    pushReorderEntry,
+    columnOrder: computed(() => columnOrderRef?.value ?? []),
+    columnPinned: computed(() => columnPinnedRef?.value ?? new Set<number>()),
   }
 }
