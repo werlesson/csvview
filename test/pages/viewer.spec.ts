@@ -10,6 +10,7 @@ import {
 import { useFilesStore } from '~/composables/useFilesStore'
 import { deleteDatabase } from '~/composables/useDatabase'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import { useCellEditing } from '~/composables/useCellEditing'
 
 /** Dataset de exemplo: id (number), status (text), amount (number). */
 function makeDataset(): Dataset {
@@ -957,5 +958,82 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(false)
+  })
+})
+
+describe('viewer.vue — ponto de integração do histórico de reordenação (reorder-columns-undo-redo, T04)', () => {
+  beforeEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  /** Arrasta o cabeçalho da posição `from` para a posição `to` (gesto completo). */
+  async function dragReorder(
+    wrapper: Awaited<ReturnType<typeof mountViewer>>,
+    from: number,
+    to: number,
+  ): Promise<void> {
+    const buttons = wrapper.findAll('.viewer-table__th-button')
+    const headers = wrapper.findAll('.viewer-table__th')
+    await buttons[from]!.trigger('dragstart')
+    await headers[to]!.trigger('dragover')
+    await headers[to]!.trigger('drop')
+    await buttons[from]!.trigger('dragend')
+  }
+
+  it('um drag-and-drop completo que reordena empilha exatamente 1 entrada { kind: "reorder" } com previousOrder/nextOrder corretos', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { undoStack } = useCellEditing()
+    expect(undoStack.value).toHaveLength(0)
+
+    // dataset de 3 colunas (id, status, amount): arrasta "amount" (posição 2) para a 1ª posição.
+    await dragReorder(wrapper, 2, 0)
+
+    expect(undoStack.value).toHaveLength(1)
+    const entry = undoStack.value[0]!
+    expect(entry.kind).toBe('reorder')
+    if (entry.kind === 'reorder') {
+      // `order.value` bruto começa vazio (identidade só é aplicada pelo
+      // computed `effectiveOrder`, nunca escrita de volta) — o snapshot
+      // "antes" reflete esse estado bruto, não a identidade normalizada.
+      expect(entry.previousOrder).toEqual([])
+      expect(entry.nextOrder).toEqual([2, 0, 1])
+    }
+
+    // Refletido na tabela: "amount" passa a ser o primeiro cabeçalho.
+    const labels = wrapper.findAll('.viewer-table__th-label').map((l) => l.text())
+    expect(labels[0]).toBe('amount')
+  })
+
+  it('um drop na mesma posição de origem (no-op) não faz undoStack crescer', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { undoStack } = useCellEditing()
+    await dragReorder(wrapper, 0, 0)
+
+    expect(undoStack.value).toHaveLength(0)
+  })
+
+  it('registerColumnOrderState é chamado com os mesmos refs que displayColumns deriva (reorder reflete em useCellEditing().columnOrder)', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { columnOrder } = useCellEditing()
+    await dragReorder(wrapper, 2, 0)
+
+    expect(columnOrder.value).toEqual([2, 0, 1])
   })
 })

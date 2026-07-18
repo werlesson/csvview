@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSaveVersion } from '~/composables/useSaveVersion'
 import { useCellEditing } from '~/composables/useCellEditing'
@@ -387,6 +388,109 @@ describe('useSaveVersion', () => {
       await saveNewVersion()
 
       expect(hasUnsavedChanges.value).toBe(true)
+    })
+  })
+
+  describe('projeção pela ordem de colunas vigente (T03, CT-03)', () => {
+    /** Dataset de 4 colunas para exercitar reordenação + fixação. */
+    function makeWideDataset(): Dataset {
+      return {
+        header: ['id', 'name', 'city', 'age'],
+        rows: [
+          ['1', 'Ana', 'SP', '30'],
+          ['2', 'Bruno', 'RJ', '25'],
+        ],
+      }
+    }
+
+    it('saveNewVersion() serializa header e cada linha na ordem reordenada (sem fixação)', async () => {
+      useCurrentDataset().setDataset(makeWideDataset(), makeMeta({ columnCount: 4 }))
+      // ordem vigente: age, id, name, city (índices 3,0,1,2), sem fixação
+      const cellEditing = {
+        markSaved: vi.fn(),
+        columnOrder: ref([3, 0, 1, 2]),
+        columnPinned: ref(new Set<number>()),
+      }
+
+      const { saveNewVersion } = useSaveVersion({
+        currentDataset: useCurrentDataset(),
+        cellEditing,
+      })
+      await saveNewVersion()
+
+      const filesStore = useFilesStore()
+      const files = await filesStore.listFiles()
+      expect(files[0]?.content).toBe(
+        'age,id,name,city\n30,1,Ana,SP\n25,2,Bruno,RJ',
+      )
+    })
+
+    it('overwriteOriginal() serializa header e cada linha na ordem reordenada', async () => {
+      const filesStore = useFilesStore()
+      const id = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 4,
+        content: 'id,name,city,age\n1,Ana,SP,30\n2,Bruno,RJ,25',
+      })
+      useCurrentDataset().setDataset(makeWideDataset(), makeMeta({ id, columnCount: 4 }))
+      const cellEditing = {
+        markSaved: vi.fn(),
+        columnOrder: ref([3, 0, 1, 2]),
+        columnPinned: ref(new Set<number>()),
+      }
+
+      const { overwriteOriginal } = useSaveVersion({
+        currentDataset: useCurrentDataset(),
+        cellEditing,
+      })
+      await overwriteOriginal()
+
+      const stored = await filesStore.getFile(id)
+      expect(stored?.content).toBe('age,id,name,city\n30,1,Ana,SP\n25,2,Bruno,RJ')
+    })
+
+    it('grupo fixado aparece primeiro, na sequência de fixação, seguido do grupo não-fixado', async () => {
+      useCurrentDataset().setDataset(makeWideDataset(), makeMeta({ columnCount: 4 }))
+      // fixadas: city (2), id (0), nessa sequência; não-fixadas seguem `order`: name(1), age(3)
+      const cellEditing = {
+        markSaved: vi.fn(),
+        columnOrder: ref([0, 1, 2, 3]),
+        columnPinned: ref(new Set<number>([2, 0])),
+      }
+
+      const { saveNewVersion } = useSaveVersion({
+        currentDataset: useCurrentDataset(),
+        cellEditing,
+      })
+      await saveNewVersion()
+
+      const filesStore = useFilesStore()
+      const files = await filesStore.listFiles()
+      expect(files[0]?.content).toBe(
+        'city,id,name,age\nSP,1,Ana,30\nRJ,2,Bruno,25',
+      )
+    })
+
+    it('sem reordenação (columnOrder/columnPinned vazios), content é idêntico ao comportamento anterior', async () => {
+      useCurrentDataset().setDataset(makeWideDataset(), makeMeta({ columnCount: 4 }))
+      const cellEditing = {
+        markSaved: vi.fn(),
+        columnOrder: ref<number[]>([]),
+        columnPinned: ref(new Set<number>()),
+      }
+
+      const { saveNewVersion } = useSaveVersion({
+        currentDataset: useCurrentDataset(),
+        cellEditing,
+      })
+      await saveNewVersion()
+
+      const filesStore = useFilesStore()
+      const files = await filesStore.listFiles()
+      expect(files[0]?.content).toBe('id,name,city,age\n1,Ana,SP,30\n2,Bruno,RJ,25')
     })
   })
 })

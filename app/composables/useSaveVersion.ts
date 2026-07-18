@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import { useCellEditing } from '~/composables/useCellEditing'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useFilesStore } from '~/composables/useFilesStore'
-import { stringifyDataset, type Delimiter } from '~/services/csvParser'
+import { orderedColumnIndices, stringifyDataset, type Delimiter } from '~/services/csvParser'
 import { nextCopyName } from '~/services/formatFile'
 
 /** Dependências injetáveis do composable (todas com um default de produção). */
@@ -11,8 +11,12 @@ export interface UseSaveVersionOptions {
   currentDataset?: Pick<ReturnType<typeof useCurrentDataset>, 'dataset' | 'meta' | 'updateMeta'>
   /** Store `files`; default {@link useFilesStore}. */
   filesStore?: Pick<ReturnType<typeof useFilesStore>, 'saveFile' | 'overwriteFile'>
-  /** Histórico de undo/redo; default {@link useCellEditing}. */
-  cellEditing?: Pick<ReturnType<typeof useCellEditing>, 'markSaved'>
+  /**
+   * Histórico de undo/redo + ordem de colunas vigente; default
+   * {@link useCellEditing}. `columnOrder`/`columnPinned` (CT-03) permitem
+   * projetar `header`/`rows` pela ordem reordenada antes de serializar.
+   */
+  cellEditing?: Pick<ReturnType<typeof useCellEditing>, 'markSaved' | 'columnOrder' | 'columnPinned'>
 }
 
 /**
@@ -32,16 +36,34 @@ export interface UseSaveVersionOptions {
 export function useSaveVersion(options: UseSaveVersionOptions = {}) {
   const { dataset, meta, updateMeta } = options.currentDataset ?? useCurrentDataset()
   const { saveFile, overwriteFile } = options.filesStore ?? useFilesStore()
-  const { markSaved } = options.cellEditing ?? useCellEditing()
+  const { markSaved, columnOrder, columnPinned } = options.cellEditing ?? useCellEditing()
 
   /** `true` enquanto uma escrita (`saveNewVersion`/`overwriteOriginal`) está em voo. */
   const isBusy = ref(false)
   /** Mensagem de erro legível da última escrita, ou `null` se não houve falha. */
   const error = ref<string | null>(null)
 
+  /**
+   * Serializa o dataset projetado pela ordem de colunas VIGENTE (CT-03):
+   * grupo fixado primeiro, na sequência de fixação, seguido do grupo
+   * não-fixado, na sequência de `order` — nunca `displayColumns` (que
+   * filtraria colunas ocultas, fora de escopo mudar). Sem reordenação
+   * confirmada, `columnOrder`/`columnPinned` ficam vazios e
+   * `orderedColumnIndices` cai na ordem identidade (sem regressão).
+   */
   function serializeCurrent(): string {
     const current = dataset.value!
-    return stringifyDataset(current, meta.value!.delimiter as Delimiter)
+    const indices = orderedColumnIndices(
+      current.header.length,
+      columnOrder.value,
+      [...columnPinned.value],
+    )
+    const projectedHeader = indices.map((i) => current.header[i] ?? '')
+    const projectedRows = current.rows.map((row) => indices.map((i) => row[i] ?? ''))
+    return stringifyDataset(
+      { header: projectedHeader, rows: projectedRows },
+      meta.value!.delimiter as Delimiter,
+    )
   }
 
   /**
