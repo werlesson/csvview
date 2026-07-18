@@ -32,6 +32,7 @@
 
 - TypeScript `^7.0.2` (`package.json`); Node `>=22.12.0` required (`package.json` engines, `.nvmrc: "22"`).
 - Vue 3 SFCs (`^3.5.39`) with `<script setup lang="ts">`; app code lives under `app/`, the Nuxt 4 `srcDir` (components, composables, layouts, pages, services).
+- Pages/routes: `app/pages/index.vue` (Upload), `app/pages/viewer.vue` (Viewer: search/sort/filter/edit/export/compare), `app/pages/compare.vue` (file comparison, feature `file-comparison`).
 - Tailwind CSS v4 via `@tailwindcss/vite`, wired in `nuxt.config.ts`; single entrypoint `app/assets/css/main.css` (`@import "tailwindcss"`); styling via inline utility classes, no scoped `<style>` blocks.
 - Path aliases `~` and `@` both resolve to `./app` (`vitest.config.ts`, `tsconfig.json`).
 - Pure domain logic isolated in `app/services/` — framework-free, unit-testable: `csvParser.ts`, `csvParser.worker.ts`, `columnStats.ts`, `columnFilters.ts`, `exportData.ts`, `exportXlsx.ts`, `filterLabels.ts`, `formatFile.ts`, `viewerSession.ts`.
@@ -41,8 +42,9 @@
 ## 3. Agent Communication & Behavioral Guidelines
 
 - Use `yarn` for all package operations; `yarn.lock` is the only lockfile present (source of truth).
-- Domain code spans `app/components/` (16 Vue SFCs: `ViewerTable`, `ExportModal`, `FilterPanel`, `StatsPanel`, `Dropzone`, etc.), `app/composables/` (12: `useCsvParser`, `useDatabase`, `useFilesStore`, `useViewer`, `useViewerSession`, `useSessionStore`, `useSettingsStore`, `useTheme`, `useOpenFile`, `useCellEditing`, `useSaveVersion`, `useCurrentDataset`, `useExportModal`), and `app/services/` — this is not scaffold code; the app is a client-side CSV viewer with streaming parse, filters, export, and IndexedDB-backed sessions.
+- Domain code spans `app/components/` (26 Vue SFCs: `ViewerTable`, `ExportModal`, `FilterPanel`, `StatsPanel`, `Dropzone`, `CompareFileSelector`, `CompareSummary`, `CompareTable`, `ConfirmModal`, `SaveCopyModal`, `UnsavedChangesModal`, etc.), `app/composables/` (15: `useCsvParser`, `useDatabase`, `useFilesStore`, `useViewer`, `useViewerSession`, `useSessionStore`, `useSettingsStore`, `useTheme`, `useOpenFile`, `useCellEditing`, `useSaveVersion`, `useCurrentDataset`, `useExportModal`, `useComparisonDatasets`, `useUnsavedChangesGuard`), and `app/services/` — this is not scaffold code; the app is a client-side CSV viewer with streaming parse, filters, export, IndexedDB-backed sessions, and file-to-file comparison.
 - App is `ssr:false` with Nitro `preset:'static'` (`nuxt.config.ts`) — pure client-side SPA, no server runtime and no backend API surface to design against.
+- Undo/redo in `useCellEditing.ts` is a unified history stack covering both cell edits and column reordering (`HistoryEntry kind: 'cell' | 'reorder'`); `viewer.vue` wires `registerColumnOrderState()`/`pushReorderEntry()` to `useViewer`'s order/pinned refs, and `useSaveVersion.ts`'s `serializeCurrent()` projects rows through the current column order (`orderedColumnIndices`) before saving.
 
 ### Never in this repository
 
@@ -76,7 +78,7 @@ yarn generate
 | `vue-tsc` reports type-check errors | Known broken on TypeScript `^7.0.2` (`vue-tsc ^3.3.7`) — validate with `yarn test` instead. |
 
 - Tests run under `happy-dom` with `@vue/test-utils` `mount`; globals enabled (`vitest.config.ts`).
-- Test layout: flat `.spec.ts` files in `test/`, plus `test/pages/` (`index.spec.ts`, `pageTransition.spec.ts`, `viewer.spec.ts`); `test/setup.ts` is the Vitest setup file.
+- Test layout: flat `.spec.ts` files in `test/` (39 files), plus `test/pages/` (`compare.spec.ts`, `index.spec.ts`, `pageTransition.spec.ts`, `viewer.spec.ts`); `test/setup.ts` is the Vitest setup file.
 - IndexedDB-touching tests (`useDatabase`, `useFilesStore`, `useSessionStore`, `useSettingsStore`) rely on `fake-indexeddb` (`package.json`) — no real browser needed.
 - If aliases fail to resolve in tests, confirm `~`/`@` map to `./app` in `vitest.config.ts`.
 

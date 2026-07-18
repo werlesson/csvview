@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   CsvParseError,
   detectDelimiter,
+  orderedColumnIndices,
   parseCsv,
   runParseRequest,
   stringifyDataset,
@@ -250,6 +251,47 @@ describe('motor de parsing CSV/TSV', () => {
       const content = stringifyDataset(dataset, 'comma')
 
       expect(content).toBe('a,b,c')
+    })
+  })
+
+  describe('orderedColumnIndices (CT-03: projeção pura da ordem completa de colunas)', () => {
+    it('grupo fixado primeiro, na sequência de pinnedSequence (não ordenado numericamente), seguido do grupo não-fixado na sequência de order', () => {
+      const result = orderedColumnIndices(6, [0, 1, 2, 3, 4, 5], [4, 1])
+
+      expect(result).toEqual([4, 1, 0, 2, 3, 5])
+    })
+
+    it('order de tamanho divergente de columnCount cai para identidade', () => {
+      const result = orderedColumnIndices(4, [1, 0], [])
+
+      expect(result).toEqual([0, 1, 2, 3])
+    })
+
+    it('order de tamanho divergente cai para identidade mesmo com pinnedSequence não vazio', () => {
+      const result = orderedColumnIndices(4, [3, 2], [2])
+
+      expect(result).toEqual([2, 0, 1, 3])
+    })
+
+    it('cobre [0, columnCount) exatamente 1 vez, sem duplicados/faltantes, com pinnedSequence vazio', () => {
+      const result = orderedColumnIndices(5, [4, 3, 2, 1, 0], [])
+
+      expect(result.slice().sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4])
+      expect(result).toEqual([4, 3, 2, 1, 0])
+    })
+
+    it('cobre [0, columnCount) exatamente 1 vez quando pinnedSequence é o conjunto inteiro de colunas', () => {
+      const result = orderedColumnIndices(3, [0, 1, 2], [2, 0, 1])
+
+      expect(result).toEqual([2, 0, 1])
+    })
+
+    it('índice de pinnedSequence fora de [0, columnCount) é ignorado sem lançar', () => {
+      expect(() => orderedColumnIndices(3, [0, 1, 2], [-1, 5, 1])).not.toThrow()
+
+      const result = orderedColumnIndices(3, [0, 1, 2], [-1, 5, 1])
+
+      expect(result).toEqual([1, 0, 2])
     })
   })
 

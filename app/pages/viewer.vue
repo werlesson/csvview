@@ -10,7 +10,7 @@ import ConfirmModal from '~/components/ConfirmModal.vue'
 import SaveCopyModal from '~/components/SaveCopyModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
-import { useCellEditing } from '~/composables/useCellEditing'
+import { registerColumnOrderState, useCellEditing } from '~/composables/useCellEditing'
 import { useSaveVersion } from '~/composables/useSaveVersion'
 import { useViewerSession } from '~/composables/useViewerSession'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
@@ -74,6 +74,14 @@ const {
   columnDuplicateCounts,
 } = useViewer(() => dataset.value)
 
+/**
+ * Ponto de integração explícito (CT-02, T04): registra os MESMOS refs
+ * mutáveis `order`/`pinned` desta instância de `useViewer()` como destino de
+ * undo/redo de reordenação de coluna na pilha compartilhada de
+ * `useCellEditing()`.
+ */
+registerColumnOrderState(order, pinned)
+
 useViewerSession({ filters, sortKeys, hidden, widths, order, pinned }, meta)
 
 const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
@@ -83,7 +91,7 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
  * T09) — nenhum estado de edição próprio na página, só a fiação entre os
  * composables e `ViewerToolbar` (undo/redo/salvar/sobrescrever).
  */
-const { canUndo, canRedo, hasUnsavedChanges, undo, redo } = useCellEditing()
+const { canUndo, canRedo, hasUnsavedChanges, undo, redo, pushReorderEntry } = useCellEditing()
 const { isBusy: isSaving, error: saveError, saveNewVersion, overwriteOriginal } = useSaveVersion()
 const { guardNavigation } = useUnsavedChangesGuard()
 
@@ -93,6 +101,27 @@ function onUndo(): void {
 
 function onRedo(): void {
   redo()
+}
+
+/**
+ * Envolve `reorderColumn` (T04): captura o snapshot de `order`/`pinned`
+ * antes/depois do gesto de arraste concluído e empilha exatamente 1 entrada
+ * na pilha compartilhada (RF-01, CT-04) — só quando o conteúdo difere,
+ * satisfazendo o caso no-op (mesma posição de origem, fora dos limites).
+ */
+function onReorder(from: number, to: number): void {
+  const previousOrder = [...order.value]
+  const previousPinned = [...pinned.value]
+  reorderColumn(from, to)
+  const nextOrder = [...order.value]
+  const nextPinned = [...pinned.value]
+  if (
+    previousOrder.join(',') === nextOrder.join(',') &&
+    previousPinned.join(',') === nextPinned.join(',')
+  ) {
+    return
+  }
+  pushReorderEntry(previousOrder, previousPinned, nextOrder, nextPinned)
 }
 
 /**
@@ -255,7 +284,6 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       title="Salvar?"
       :message="`Isso substituirá permanentemente o conteúdo de “${meta?.name ?? ''}”. As edições não salvas como cópia serão perdidas do arquivo original — esta ação não pode ser desfeita.`"
       confirm-label="Salvar"
-      danger
       :busy="isSaving"
       @confirm="onConfirmOverwrite"
       @close="showOverwriteConfirm = false"
@@ -274,7 +302,7 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
         @sort="sortColumn"
         @sort-additive="sortColumnAdditive"
         @resize="resizeColumn"
-        @reorder="reorderColumn"
+        @reorder="onReorder"
         @toggle-pin="togglePin"
         @clear-filters="clearFilters"
       />

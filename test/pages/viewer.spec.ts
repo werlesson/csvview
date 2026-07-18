@@ -10,6 +10,8 @@ import {
 import { useFilesStore } from '~/composables/useFilesStore'
 import { deleteDatabase } from '~/composables/useDatabase'
 import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import { useCellEditing } from '~/composables/useCellEditing'
+import { parseCsv } from '~/services/csvParser'
 
 /** Dataset de exemplo: id (number), status (text), amount (number). */
 function makeDataset(): Dataset {
@@ -957,5 +959,395 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(false)
+  })
+})
+
+describe('viewer.vue — ponto de integração do histórico de reordenação (reorder-columns-undo-redo, T04)', () => {
+  beforeEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  /** Arrasta o cabeçalho da posição `from` para a posição `to` (gesto completo). */
+  async function dragReorder(
+    wrapper: Awaited<ReturnType<typeof mountViewer>>,
+    from: number,
+    to: number,
+  ): Promise<void> {
+    const buttons = wrapper.findAll('.viewer-table__th-button')
+    const headers = wrapper.findAll('.viewer-table__th')
+    await buttons[from]!.trigger('dragstart')
+    await headers[to]!.trigger('dragover')
+    await headers[to]!.trigger('drop')
+    await buttons[from]!.trigger('dragend')
+  }
+
+  it('um drag-and-drop completo que reordena empilha exatamente 1 entrada { kind: "reorder" } com previousOrder/nextOrder corretos', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { undoStack } = useCellEditing()
+    expect(undoStack.value).toHaveLength(0)
+
+    // dataset de 3 colunas (id, status, amount): arrasta "amount" (posição 2) para a 1ª posição.
+    await dragReorder(wrapper, 2, 0)
+
+    expect(undoStack.value).toHaveLength(1)
+    const entry = undoStack.value[0]!
+    expect(entry.kind).toBe('reorder')
+    if (entry.kind === 'reorder') {
+      // `order.value` bruto começa vazio (identidade só é aplicada pelo
+      // computed `effectiveOrder`, nunca escrita de volta) — o snapshot
+      // "antes" reflete esse estado bruto, não a identidade normalizada.
+      expect(entry.previousOrder).toEqual([])
+      expect(entry.nextOrder).toEqual([2, 0, 1])
+    }
+
+    // Refletido na tabela: "amount" passa a ser o primeiro cabeçalho.
+    const labels = wrapper.findAll('.viewer-table__th-label').map((l) => l.text())
+    expect(labels[0]).toBe('amount')
+  })
+
+  it('um drop na mesma posição de origem (no-op) não faz undoStack crescer', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { undoStack } = useCellEditing()
+    await dragReorder(wrapper, 0, 0)
+
+    expect(undoStack.value).toHaveLength(0)
+  })
+
+  it('registerColumnOrderState é chamado com os mesmos refs que displayColumns deriva (reorder reflete em useCellEditing().columnOrder)', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const { columnOrder } = useCellEditing()
+    await dragReorder(wrapper, 2, 0)
+
+    expect(columnOrder.value).toEqual([2, 0, 1])
+  })
+})
+
+describe('viewer.vue — testes de integração cross-cutting (reorder-columns-undo-redo, T05)', () => {
+  // Nenhuma alteração de produção nesta suíte — só os 4 cenários ponta a
+  // ponta que não cabem isoladamente em nenhum composable individual (RF-01,
+  // RF-05, RF-06, RF-07, RF-08). Mesmo stub de `offsetHeight` + duplo
+  // `nextTick` de `test/ViewerTable.spec.ts` (ver MEMORY
+  // viewertable-virtualizer-no-body-rows-jsdom): sem ele o virtualizador não
+  // renderiza nenhuma linha do corpo em happy-dom.
+  const CONTENT = 'id,status,amount\n1,settled,100\n2,failed,250\n3,failed,-50\n4,settled,10'
+
+  beforeEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+  })
+
+  afterEach(async () => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+    await deleteDatabase()
+  })
+
+  /** Arrasta o cabeçalho da posição `from` para a posição `to` (gesto completo, mesmo padrão de T04). */
+  async function dragReorder(
+    wrapper: Awaited<ReturnType<typeof mountViewer>>,
+    from: number,
+    to: number,
+  ): Promise<void> {
+    const buttons = wrapper.findAll('.viewer-table__th-button')
+    const headers = wrapper.findAll('.viewer-table__th')
+    await buttons[from]!.trigger('dragstart')
+    await headers[to]!.trigger('dragover')
+    await headers[to]!.trigger('drop')
+    await buttons[from]!.trigger('dragend')
+  }
+
+  /** Edita e confirma a célula na linha/coluna de EXIBIÇÃO indicadas (posição pós-reorder, não índice original). */
+  async function editCell(
+    wrapper: Awaited<ReturnType<typeof mountViewer>>,
+    rowIndex: number,
+    columnIndex: number,
+    value: string,
+  ): Promise<void> {
+    const cell = wrapper
+      .findAll('.viewer-table__body .viewer-table__row')[rowIndex]!
+      .findAll('.csv-cell')[columnIndex]!
+    await cell.trigger('dblclick')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue(value)
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+  }
+
+  /** Rótulos de cabeçalho na ordem de exibição atual. */
+  function headerLabels(wrapper: Awaited<ReturnType<typeof mountViewer>>): string[] {
+    return wrapper.findAll('.viewer-table__th-label').map((label) => label.text())
+  }
+
+  /**
+   * Espera até `predicate()` ficar verdadeiro, intercalando `flushPromises()`
+   * e `nextTick()` — a escrita no IndexedDB encadeia várias voltas
+   * assíncronas reais (abrir a conexão, transação, `onsuccess`) cuja
+   * contagem exata varia sob carga; contar um número fixo de
+   * `flushPromises()` é frágil (mesma observação de `mountWideViewer`,
+   * acima, generalizada para não depender de uma constante).
+   */
+  async function waitUntil(predicate: () => boolean, maxIterations = 40): Promise<void> {
+    for (let i = 0; i < maxIterations && !predicate(); i++) {
+      await flushPromises()
+      await nextTick()
+    }
+  }
+
+  it('reorder → edição de célula → reorder, seguido de 3× "Desfazer" pela toolbar, reverte na ordem cronológica real (RF-01)', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    expect(headerLabels(wrapper)).toEqual(['id', 'status', 'amount'])
+
+    // Reorder 1: "amount" (posição 2) vai para a 1ª posição.
+    await dragReorder(wrapper, 2, 0)
+    expect(headerLabels(wrapper)).toEqual(['amount', 'id', 'status'])
+
+    // Edição de célula: "status" (agora posição 2) da linha 0, 'settled' → 'pending'.
+    await editCell(wrapper, 0, 2, 'pending')
+    expect(wrapper.findAll('.viewer-table__body .viewer-table__row')[0]!.text()).toContain(
+      'pending',
+    )
+
+    // Reorder 2: "id" (posição 1) troca de lugar com "status" (posição 2).
+    await dragReorder(wrapper, 1, 2)
+    expect(headerLabels(wrapper)).toEqual(['amount', 'status', 'id'])
+
+    const undoButton = () => wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]')
+
+    // Desfazer 1: reverte o reorder 2 — só a ordem muda, a edição continua aplicada.
+    await undoButton().trigger('click')
+    await nextTick()
+    expect(headerLabels(wrapper)).toEqual(['amount', 'id', 'status'])
+    expect(wrapper.findAll('.viewer-table__body .viewer-table__row')[0]!.text()).toContain(
+      'pending',
+    )
+
+    // Desfazer 2: reverte a edição de célula — a ordem permanece a do reorder 1.
+    await undoButton().trigger('click')
+    await nextTick()
+    expect(headerLabels(wrapper)).toEqual(['amount', 'id', 'status'])
+    const row0Text = wrapper.findAll('.viewer-table__body .viewer-table__row')[0]!.text()
+    expect(row0Text).toContain('settled')
+    expect(row0Text).not.toContain('pending')
+
+    // Desfazer 3: reverte o reorder 1 — volta à ordem original do arquivo.
+    await undoButton().trigger('click')
+    await nextTick()
+    expect(headerLabels(wrapper)).toEqual(['id', 'status', 'amount'])
+    expect(undoButton().attributes('disabled')).toBeDefined()
+  })
+
+  it('reorder sem salvamento subsequente aciona o guard de alterações não salvas ao navegar para "Comparar" (RF-05)', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    await dragReorder(wrapper, 2, 0)
+    expect(useCellEditing().hasUnsavedChanges.value).toBe(true)
+
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+
+    await wrapper.get('.toolbar__compare').trigger('click')
+
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(useUnsavedChangesGuard().isOpen.value).toBe(true)
+    useUnsavedChangesGuard().cancel()
+  })
+
+  it('reorder → "Salvar nova versão" → reabrir o registro salvo mostra cabeçalho/linhas na ordem reordenada, e hasUnsavedChanges volta a false (RF-06, RF-07)', async () => {
+    const filesStore = useFilesStore()
+    const fileId = await filesStore.saveFile({
+      name: 'transactions.csv',
+      delimiter: 'comma',
+      size_bytes: CONTENT.length,
+      row_count: 4,
+      column_count: 3,
+      content: CONTENT,
+    })
+
+    useCurrentDataset().setDataset(makeDataset(), {
+      id: fileId,
+      name: 'transactions.csv',
+      delimiter: 'comma',
+      sizeBytes: CONTENT.length,
+      rowCount: 4,
+      columnCount: 3,
+    })
+
+    const wrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    // Reorder: "amount" (posição 2) vai para a 1ª posição.
+    await dragReorder(wrapper, 2, 0)
+    expect(headerLabels(wrapper)).toEqual(['amount', 'id', 'status'])
+    expect(useCellEditing().hasUnsavedChanges.value).toBe(true)
+
+    // "Salvar nova versão" (modal de nomeação → confirmar com o nome sugerido).
+    await wrapper.get('.toolbar__save-version').trigger('click')
+    await nextTick()
+    await wrapper.get('.save-copy-overlay__confirm').trigger('click')
+    // Espera o modal fechar — sinal concreto de que `saveNewVersion` (async,
+    // via IndexedDB) já concluiu, em vez de contar um número fixo de voltas.
+    await waitUntil(() => !wrapper.find('.save-copy-overlay').exists())
+
+    // RF-07: a posição salva cobre a reordenação — hasUnsavedChanges volta a false.
+    expect(useCellEditing().hasUnsavedChanges.value).toBe(false)
+
+    // RF-06: o conteúdo persistido reflete a ordem vigente (reordenada), não a ordem original do arquivo.
+    const files = await filesStore.listFiles()
+    const newRecord = files.find((f) => f.id !== fileId)!
+    expect(newRecord.content).toBe(
+      'amount,id,status\n100,1,settled\n250,2,failed\n-50,3,failed\n10,4,settled',
+    )
+
+    // Reabre o registro salvo: reparseia o conteúdo persistido e monta uma
+    // instância NOVA do Viewer (mesma convenção de "reabertura" já usada
+    // pela suíte de sessão, acima) — a instância atual ainda carrega o
+    // `order`/`pinned` (RAW) da reordenação já persistida no arquivo; uma
+    // nova instância parte de `order`/`pinned` vazios sobre o cabeçalho já
+    // fisicamente reordenado no conteúdo salvo.
+    wrapper.unmount()
+    const parsed = await parseCsv(newRecord.content, {
+      fileName: newRecord.name,
+      delimiter: newRecord.delimiter,
+    })
+    useCurrentDataset().setDataset(
+      { header: parsed.header, rows: parsed.rows },
+      {
+        id: newRecord.id,
+        name: newRecord.name,
+        delimiter: newRecord.delimiter,
+        sizeBytes: newRecord.size_bytes,
+        rowCount: newRecord.row_count,
+        columnCount: newRecord.column_count,
+      },
+    )
+    const reopened = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    expect(headerLabels(reopened)).toEqual(['amount', 'id', 'status'])
+    const bodyRows = reopened.findAll('.viewer-table__body .viewer-table__row')
+    expect(bodyRows[0]!.text()).toContain('100')
+    expect(bodyRows[0]!.text()).toContain('settled')
+  })
+
+  it('reorder sem salvar → trocar para um dataset diferente → reabrir o dataset original: "Desfazer" não tem efeito e a ordem parte do estado padrão (RF-08)', async () => {
+    // `meta.id` deliberadamente `undefined` nos três datasets: mantém o
+    // cenário focado no reset da pilha compartilhada/`order`/`pinned` (RF-08
+    // desta feature), sem entrelaçar com a persistência assíncrona e
+    // debounced de sessão por arquivo (`sessions`, `useViewerSession`,
+    // `RF-01` — feature à parte, explicitamente fora de escopo aqui).
+    useCurrentDataset().setDataset(makeDataset(), {
+      name: 'a.csv',
+      delimiter: 'comma',
+      sizeBytes: CONTENT.length,
+      rowCount: 4,
+      columnCount: 3,
+    })
+
+    let wrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    // Reordena sem salvar.
+    await dragReorder(wrapper, 2, 0)
+    expect(headerLabels(wrapper)).toEqual(['amount', 'id', 'status'])
+    expect(useCellEditing().undoStack.value).toHaveLength(1)
+
+    wrapper.unmount()
+
+    // Troca para um dataset diferente — simula abrir outro arquivo no Viewer.
+    useCurrentDataset().setDataset(
+      {
+        header: ['x', 'y'],
+        rows: [
+          ['1', '2'],
+          ['3', '4'],
+        ],
+      },
+      {
+        name: 'b.csv',
+        delimiter: 'comma',
+        sizeBytes: 8,
+        rowCount: 2,
+        columnCount: 2,
+      },
+    )
+
+    const otherWrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+    otherWrapper.unmount()
+
+    // Reabre o dataset original (mesmo conteúdo, nova instância de dataset — dispara o reset, RF-08).
+    useCurrentDataset().setDataset(makeDataset(), {
+      name: 'a.csv',
+      delimiter: 'comma',
+      sizeBytes: CONTENT.length,
+      rowCount: 4,
+      columnCount: 3,
+    })
+
+    wrapper = mount(
+      { render: () => h(Suspense, null, { default: () => h(ViewerPage) }) },
+      { attachTo: document.body },
+    )
+    await flushPromises()
+    await nextTick()
+    await nextTick()
+
+    // A ordem de colunas parte do estado padrão da nova sessão — a reordenação anterior não sobrevive.
+    expect(headerLabels(wrapper)).toEqual(['id', 'status', 'amount'])
+    expect(useCellEditing().undoStack.value).toHaveLength(0)
+
+    // "Desfazer" não tem efeito (histórico vazio) — segue desabilitado e a ordem não muda.
+    const undoButton = wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]')
+    expect(undoButton.attributes('disabled')).toBeDefined()
+    await undoButton.trigger('click')
+    await nextTick()
+
+    expect(headerLabels(wrapper)).toEqual(['id', 'status', 'amount'])
   })
 })

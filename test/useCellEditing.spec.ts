@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useCellEditing } from '~/composables/useCellEditing'
 import {
@@ -227,6 +228,215 @@ describe('useCellEditing', () => {
     })
   })
 
+  describe('reorder (CT-01/CT-02): pushReorderEntry, undo/redo, dispatch por kind', () => {
+    it('pushReorderEntry empilha exatamente 1 entrada e esvazia redoStack', () => {
+      const { pushReorderEntry, undo, undoStack, redoStack, registerColumnOrderState } =
+        editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      // Cria uma entrada de redo pendente antes, pra garantir que é esvaziada.
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [], [1, 0, 2, 3, 4, 5], [])
+      undo()
+      expect(redoStack.value).toHaveLength(1)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [], [2, 0, 1, 3, 4, 5], [])
+
+      expect(undoStack.value).toHaveLength(1)
+      expect(undoStack.value[0]).toEqual({
+        kind: 'reorder',
+        previousOrder: [0, 1, 2, 3, 4, 5],
+        previousPinned: [],
+        nextOrder: [2, 0, 1, 3, 4, 5],
+        nextPinned: [],
+      })
+      expect(redoStack.value).toHaveLength(0)
+    })
+
+    it('undo() numa entrada reorder restaura previousOrder/previousPinned exatos nos refs registrados', () => {
+      const { pushReorderEntry, undo, registerColumnOrderState } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set([3, 1]))
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [3, 1], [5, 0, 1, 2, 3, 4], [1, 3])
+      orderRef.value = [5, 0, 1, 2, 3, 4]
+      pinnedRef.value = new Set([1, 3])
+
+      undo()
+
+      expect(orderRef.value).toEqual([0, 1, 2, 3, 4, 5])
+      expect(Array.from(pinnedRef.value)).toEqual([3, 1])
+    })
+
+    it('redo() numa entrada reorder reaplica nextOrder/nextPinned exatos nos refs registrados', () => {
+      const { pushReorderEntry, undo, redo, registerColumnOrderState } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set([3, 1]))
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [3, 1], [5, 0, 1, 2, 3, 4], [1, 3])
+      orderRef.value = [5, 0, 1, 2, 3, 4]
+      pinnedRef.value = new Set([1, 3])
+
+      undo()
+      redo()
+
+      expect(orderRef.value).toEqual([5, 0, 1, 2, 3, 4])
+      expect(Array.from(pinnedRef.value)).toEqual([1, 3])
+    })
+
+    it('sequência intercalada edição→reorder→edição desfeita 3x reverte na ordem cronológica real, não agrupada por tipo', () => {
+      const {
+        beginEdit,
+        confirmEdit,
+        pushReorderEntry,
+        undo,
+        registerColumnOrderState,
+        dataset,
+      } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      // 1) edição de célula: name da linha 0, Ana -> Alice.
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+
+      // 2) reordenação: move a última coluna para o início.
+      const previousOrder = [...orderRef.value]
+      const nextOrder = [5, 0, 1, 2, 3, 4]
+      orderRef.value = nextOrder
+      pushReorderEntry(previousOrder, [], nextOrder, [])
+
+      // 3) edição de célula: name da linha 1, Bruno -> Bru.
+      beginEdit(1, 1)
+      confirmEdit('Bru')
+
+      expect(dataset.value?.rows[0]?.[1]).toBe('Alice')
+      expect(orderRef.value).toEqual([5, 0, 1, 2, 3, 4])
+      expect(dataset.value?.rows[1]?.[1]).toBe('Bru')
+
+      // undo #1 reverte a edição mais recente (célula da linha 1).
+      undo()
+      expect(dataset.value?.rows[1]?.[1]).toBe('Bruno')
+      expect(orderRef.value).toEqual([5, 0, 1, 2, 3, 4])
+      expect(dataset.value?.rows[0]?.[1]).toBe('Alice')
+
+      // undo #2 reverte a reordenação.
+      undo()
+      expect(orderRef.value).toEqual([0, 1, 2, 3, 4, 5])
+      expect(dataset.value?.rows[0]?.[1]).toBe('Alice')
+
+      // undo #3 reverte a edição mais antiga (célula da linha 0).
+      undo()
+      expect(dataset.value?.rows[0]?.[1]).toBe('Ana')
+    })
+
+    it('nova edição após undo de um reorder esvazia redoStack', () => {
+      const {
+        pushReorderEntry,
+        beginEdit,
+        confirmEdit,
+        undo,
+        redo,
+        redoStack,
+        registerColumnOrderState,
+      } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      const previousOrder = [...orderRef.value]
+      const nextOrder = [5, 0, 1, 2, 3, 4]
+      orderRef.value = nextOrder
+      pushReorderEntry(previousOrder, [], nextOrder, [])
+
+      undo()
+      expect(redoStack.value).toHaveLength(1)
+
+      beginEdit(1, 1)
+      confirmEdit('Bru')
+
+      expect(redoStack.value).toHaveLength(0)
+
+      redo()
+      expect(orderRef.value).toEqual([0, 1, 2, 3, 4, 5])
+    })
+
+    it('novo pushReorderEntry após undo de uma edição de célula esvazia redoStack', () => {
+      const { beginEdit, confirmEdit, undo, pushReorderEntry, redoStack, registerColumnOrderState } =
+        editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      undo()
+      expect(redoStack.value).toHaveLength(1)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [], [1, 0, 2, 3, 4, 5], [])
+
+      expect(redoStack.value).toHaveLength(0)
+    })
+
+    it('isDirty ignora entradas reorder (não lança nem falso-positiva)', () => {
+      const { pushReorderEntry, isDirty, registerColumnOrderState } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [], [1, 0, 2, 3, 4, 5], [])
+
+      expect(() => isDirty(0, 1)).not.toThrow()
+      expect(isDirty(0, 1)).toBe(false)
+    })
+
+    it('trocar de dataset zera undoStack/redoStack mistos e os ponteiros registrados (undo/redo pós-troca são no-op)', () => {
+      const {
+        beginEdit,
+        confirmEdit,
+        pushReorderEntry,
+        registerColumnOrderState,
+        undoStack,
+        redoStack,
+        undo,
+        redo,
+        columnOrder,
+        columnPinned,
+      } = editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      const previousOrder = [...orderRef.value]
+      const nextOrder = [5, 0, 1, 2, 3, 4]
+      orderRef.value = nextOrder
+      pushReorderEntry(previousOrder, [], nextOrder, [])
+
+      expect(undoStack.value).toHaveLength(2)
+
+      loadDataset()
+
+      expect(undoStack.value).toHaveLength(0)
+      expect(redoStack.value).toHaveLength(0)
+      expect(columnOrder.value).toEqual([])
+      expect(columnPinned.value).toEqual(new Set())
+
+      undo()
+      redo()
+
+      expect(undoStack.value).toHaveLength(0)
+      expect(redoStack.value).toHaveLength(0)
+      // Ponteiro registrado foi zerado: os refs originais não são mais tocados.
+      expect(orderRef.value).toEqual(nextOrder)
+    })
+  })
+
   describe('markSaved/hasUnsavedChanges', () => {
     it('começa false sem edições', () => {
       const { hasUnsavedChanges } = editingHandles()
@@ -277,6 +487,22 @@ describe('useCellEditing', () => {
       confirmEdit('Bruna')
 
       expect(hasUnsavedChanges.value).toBe(true)
+    })
+
+    it('fica true após um pushReorderEntry isolado e volta a false após markSaved()', () => {
+      const { pushReorderEntry, markSaved, hasUnsavedChanges, registerColumnOrderState } =
+        editingHandles()
+      const orderRef = ref<number[]>([0, 1, 2, 3, 4, 5])
+      const pinnedRef = ref<Set<number>>(new Set())
+      registerColumnOrderState(orderRef, pinnedRef)
+
+      expect(hasUnsavedChanges.value).toBe(false)
+
+      pushReorderEntry([0, 1, 2, 3, 4, 5], [], [5, 0, 1, 2, 3, 4], [])
+      expect(hasUnsavedChanges.value).toBe(true)
+
+      markSaved()
+      expect(hasUnsavedChanges.value).toBe(false)
     })
 
     it('trocar de dataset reseta a posição salva junto com as pilhas', () => {

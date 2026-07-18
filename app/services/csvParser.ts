@@ -221,6 +221,37 @@ export function stringifyDataset(
 }
 
 /**
+ * Projeta a ordem COMPLETA de exibição das colunas (CT-03 de
+ * `reorder-columns-undo-redo`): grupo fixado primeiro, na sequência de
+ * fixação (`pinnedSequence`), seguido do grupo não fixado, na sequência de
+ * `order`. Cada índice original de `[0, columnCount)` aparece exatamente uma
+ * vez — inclusive colunas ocultas, sem noção de `hidden` — superconjunto de
+ * `displayColumns` (`useViewer.ts`), usado por `useSaveVersion` para
+ * serializar o dataset na ordem vigente em vez da ordem original do arquivo.
+ *
+ * Função pura, framework-free (mesma convenção de `stringifyDataset`):
+ * reimplementa o fallback de `effectiveOrder` (`useViewer.ts:125-129`) — `order`
+ * de tamanho diferente de `columnCount` cai para a ordem identidade.
+ */
+export function orderedColumnIndices(
+  columnCount: number,
+  order: number[],
+  pinnedSequence: number[],
+): number[] {
+  const effectiveOrder =
+    order.length === columnCount
+      ? order
+      : Array.from({ length: columnCount }, (_, index) => index)
+
+  const validPinned = pinnedSequence.filter(
+    (index) => index >= 0 && index < columnCount,
+  )
+  const pinnedSet = new Set(validPinned)
+
+  return [...validPinned, ...effectiveOrder.filter((index) => !pinnedSet.has(index))]
+}
+
+/**
  * Normaliza uma linha ao número de colunas do cabeçalho: faltantes viram
  * células vazias; excedentes são preservadas (US-1.2).
  */

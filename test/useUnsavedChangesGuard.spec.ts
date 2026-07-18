@@ -45,6 +45,17 @@ function makeDirty(): void {
   confirmEdit('Alice')
 }
 
+/**
+ * Empilha uma entrada de reordenação de coluna pendente, sem nenhuma edição
+ * de célula envolvida (RF-05 de `reorder-columns-undo-redo`, isolado de T05)
+ * — via `pushReorderEntry` diretamente, já que este composable não instancia
+ * `useViewer()`.
+ */
+function makeReorderDirty(): void {
+  const { pushReorderEntry } = useCellEditing()
+  pushReorderEntry([], [], [1, 0], [])
+}
+
 describe('useUnsavedChangesGuard', () => {
   beforeEach(async () => {
     await deleteDatabase()
@@ -73,6 +84,20 @@ describe('useUnsavedChangesGuard', () => {
   it('com edição pendente, guardNavigation abre o modal e não navega', () => {
     loadDataset()
     makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const { isOpen, guardNavigation } = useUnsavedChangesGuard()
+
+    guardNavigation('/compare')
+
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(isOpen.value).toBe(true)
+  })
+
+  it('com reordenação de coluna pendente (sem edição de célula), guardNavigation abre o modal e não navega (reorder-columns-undo-redo, RF-05)', () => {
+    loadDataset()
+    makeReorderDirty()
     const navigateToSpy = vi
       .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
       .mockImplementation(() => {})

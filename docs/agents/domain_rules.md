@@ -13,9 +13,11 @@
 - Column layout rules: pin-group clamped reordering, per-column width with a floor, visibility independent of search/stats (`app/composables/useViewer.ts`).
 - Open-file workflow: extension allowlist, parse → persist → load → navigate, with distinct error paths for invalid type vs. parse failure (`app/composables/useOpenFile.ts`).
 - Viewer session restore + debounced persistence, keyed by file id, discarded wholesale on a column-count mismatch (`app/composables/useViewerSession.ts`, `app/services/viewerSession.ts`).
-- Inline cell editing: type-validated confirm, per-dataset undo/redo stack, reset on dataset switch (`app/composables/useCellEditing.ts`).
-- Edited-dataset persistence: "save as new version" vs. "overwrite original", both re-serializing the in-memory dataset (`app/composables/useSaveVersion.ts`).
+- Inline cell editing plus column reordering share one type-discriminated (`kind:'cell'|'reorder'`) undo/redo stack, reset on dataset switch (`app/composables/useCellEditing.ts`).
+- Edited-dataset persistence: "save as new version" vs. "overwrite original", both re-serializing the in-memory dataset **projected through the current column order** (`app/composables/useSaveVersion.ts`, `orderedColumnIndices` in `app/services/csvParser.ts`).
+- Navigation guard for unsaved changes: intercepts leaving the Viewer, offers save-as-copy / overwrite / discard / cancel (`app/composables/useUnsavedChangesGuard.ts`).
 - Export content generation per format (CSV/JSON/Markdown/SQL/XLSX), always projected through the Viewer's visible/ordered columns (`app/services/exportData.ts`, `app/services/exportXlsx.ts`).
+- File comparison: record pairing by key column or by position, type-aware column divergence, and a size/row ceiling on the comparison dataset (`app/services/diffDatasets.ts`, `app/composables/useComparisonDatasets.ts`).
 
 ### Delimiter detection
 Implementing file: `app/services/csvParser.ts` (`detectDelimiter`, `detectFromContent`, `pickByCounts`).
@@ -145,38 +147,81 @@ Implementing file: `app/composables/useViewerSession.ts` (persistence orchestrat
 - `serializeViewerSession` round-trips `filters`/`sortKeys` through `JSON.parse(JSON.stringify(...))` before `db.put`, because IndexedDB's `structuredClone` throws `DataCloneError` on Vue reactive Proxy objects — plain-object copies are required for a successful write.
 - Write failures (`saveSession`/`deleteSession` rejecting) are caught and only `console.error`-logged — never surfaced to the UI or thrown, so a quota/IndexedDB failure never blocks editing.
 
-### Inline cell editing: validation and undo/redo
-Implementing file: `app/composables/useCellEditing.ts` (`beginEdit`, `confirmEdit`, `cancelEdit`, `undo`, `redo`, `isDirty`); mutation via `useCurrentDataset.updateCell`.
+### Inline cell editing and column reorder: one shared undo/redo stack
+Implementing file: `app/composables/useCellEditing.ts` (`beginEdit`, `confirmEdit`, `cancelEdit`, `pushReorderEntry`, `undo`, `redo`, `isDirty`, `markSaved`, `hasUnsavedChanges`); mutation via `useCurrentDataset.updateCell` (cells) or the `order`/`pinned` refs registered by `registerColumnOrderState` (reorders).
+
+`undoStack`/`redoStack` hold a discriminated `HistoryEntry` union: `{ kind: 'cell', rowIndex, columnIndex, previousValue, nextValue }` or `{ kind: 'reorder', previousOrder, previousPinned, nextOrder, nextPinned }` (full `order`/`pinned` snapshots, never a `from`/`to` delta — avoids drift against a since-changed current state). One stack serves both, so undo/redo interleave cell edits and column drags in the order the user performed them.
 
 | Action | Precondition | Effect |
 | --- | --- | --- |
 | `beginEdit(rowIndex, columnIndex)` | Row exists, `columnIndex` in bounds | `editingCell` set to `{ rowIndex, columnIndex, value }`; out-of-bounds is a silent no-op |
 | `confirmEdit(value)` | No cell in edit, or dataset empty | Returns `false`, no state change |
 | `confirmEdit(value)` | `value` fails `isValidForType(inferColumnType(...), value)` | `validationError` set to `Valor inválido para o tipo "<type>" desta coluna.`; dataset **not** mutated; `editingCell` retained (lets the user correct); returns `false` |
-| `confirmEdit(value)` | `value` valid | `updateCell()` mutates in place; exactly 1 entry pushed to `undoStack`; `redoStack` cleared; `editingCell`/`validationError` reset; returns `true` |
-| `undo()` | `undoStack` non-empty | Pops the last entry, restores `previousValue` via `updateCell`, pushes the entry onto `redoStack` |
+| `confirmEdit(value)` | `value` valid | `updateCell()` mutates in place; exactly 1 `{kind:'cell'}` entry pushed to `undoStack`; `redoStack` cleared; `editingCell`/`validationError` reset; returns `true` |
+| `pushReorderEntry(prevOrder, prevPinned, nextOrder, nextPinned)` | Called by `viewer.vue` after a completed drag whose result differs from before | 1 `{kind:'reorder'}` entry pushed to `undoStack`; `redoStack` cleared |
+| `undo()` | `undoStack` non-empty, entry `kind:'cell'` | Pops the entry, restores `previousValue` via `updateCell`, pushes it onto `redoStack` |
+| `undo()` | `undoStack` non-empty, entry `kind:'reorder'` | Pops the entry, sets `columnOrderRef.value = previousOrder` and `columnPinnedRef.value = new Set(previousPinned)` (no-op if `registerColumnOrderState` was never called), pushes it onto `redoStack` |
 | `undo()` | `undoStack` empty | No-op |
-| `redo()` | `redoStack` non-empty | Pops the last entry, restores `nextValue` via `updateCell`, pushes the entry onto `undoStack` |
+| `redo()` | `redoStack` non-empty | Symmetric to `undo()`, applying `nextValue`/`nextOrder`+`nextPinned` |
 
+- `registerColumnOrderState(order, pinned)` is the explicit integration point: `viewer.vue` calls it once, right after instantiating `useViewer(...)`, passing the **same** `order`/`pinned` refs the table renders from (never copies) — module-level `columnOrderRef`/`columnPinnedRef` pointers, `null` before the first registration or after a dataset reset.
 - `inferColumnType` is recomputed fresh on every `confirmEdit` call — never cached across edits — so validation always reflects the column's current mix of values, including any prior edits in the same session.
 - Empty-cell values are always valid for any type (mirrors `isEmptyCell` never invalidating a type in `inferColumnType`).
-- `undoStack`/`redoStack`/`editingCell`/`validationError` are module-scope state, reset via a `flush: 'sync'` watcher on `useCurrentDataset().meta.value?.id` — switching datasets (including from an unpersisted upload to a persisted one) always clears both stacks, so undo never crosses a dataset boundary.
-- `isDirty(rowIndex, columnIndex)` scans `undoStack` for any entry at that cell — used to render a "dirty" indicator; it does not consult `redoStack`, so a fully undone cell reports not-dirty even if `redoStack` could restore it.
+- `undoStack`/`redoStack`/`editingCell`/`validationError`/`savedPosition` are module-scope state, reset via a `flush: 'sync'` watcher on the `useCurrentDataset().dataset.value` object identity (not `meta.value.id`) — a "save as copy" changes `id` via `updateMeta` without swapping the in-memory `dataset` object, so undo/redo intentionally survive a save; only a genuine re-parse (new upload/reopen) clears both stacks.
+- `isDirty(rowIndex, columnIndex)` scans `undoStack` for a `kind:'cell'` entry at that cell — used to render a "dirty" indicator; it does not consult `redoStack`, so a fully undone cell reports not-dirty even if `redoStack` could restore it.
+- `hasUnsavedChanges` compares `undoStack.length` to `savedPosition` (the stack length at the last `markSaved()` call, invoked by `useSaveVersion` on a successful save) — it is **not** the same as `canUndo`: edit → save → undo → redo returns to `hasUnsavedChanges === false` (same position), while edit twice → save → undo once leaves it `true` (position diverges from the saved one). Drives `useUnsavedChangesGuard`.
 
 ### Edited-dataset persistence: new version vs. overwrite
-Implementing file: `app/composables/useSaveVersion.ts` (`saveNewVersion`, `overwriteOriginal`); serialization via `stringifyDataset` (`csvParser.ts`).
+Implementing file: `app/composables/useSaveVersion.ts` (`saveNewVersion`, `overwriteOriginal`, `serializeCurrent`); serialization via `stringifyDataset` + `orderedColumnIndices` (`app/services/csvParser.ts`).
+
+- `serializeCurrent()` projects `header`/`rows` through the dataset's **current** column order before serializing — never the original header order, never `useViewer`'s `displayColumns` (which would drop hidden columns, out of scope to change): `orderedColumnIndices(columnCount, columnOrder.value, [...columnPinned.value])` puts the pinned group first (in pin-insertion order), then the unpinned group in `order` sequence. With no reorder ever confirmed, `columnOrder`/`columnPinned` are empty and `orderedColumnIndices` falls back to identity order — no regression for datasets that were never reordered.
+- `columnOrder`/`columnPinned` are read from `useCellEditing()` (injectable via `UseSaveVersionOptions.cellEditing`), the same refs `registerColumnOrderState` wires to `useViewer`'s `order`/`pinned` — so a save always reflects whatever the table is currently rendering, not the header's original sequence.
 
 | Action | Precondition | Result |
 | --- | --- | --- |
-| `saveNewVersion()` | No dataset/meta loaded | `error` = `'Nenhum dataset carregado para salvar.'`, returns `false` |
-| `saveNewVersion()` | Dataset loaded | Serializes via `stringifyDataset`, calls `useFilesStore().saveFile()` with a **fresh** record — never reuses `meta.value.id` — subject to the same LRU cap as any new file; no export/download is triggered; returns `true` |
+| `saveNewVersion(customName?)` | No dataset/meta loaded | `error` = `'Nenhum dataset carregado para salvar.'`, returns `false` |
+| `saveNewVersion(customName?)` | Dataset loaded | Serializes via `serializeCurrent()`, calls `useFilesStore().saveFile()` with a **fresh** record — never reuses `meta.value.id` — name is `customName?.trim()` (from `SaveCopyModal`) or `nextCopyName(meta.value.name)` as default; subject to the same LRU cap as any new file; updates `meta` to point at the new record (`updateMeta`) so a later "overwrite" affects the copy, not the original; calls `markSaved()`; no export/download is triggered; returns `true` |
 | `overwriteOriginal()` | No dataset/meta loaded | `error` = `'Nenhum dataset carregado para sobrescrever.'`, returns `false` |
-| `overwriteOriginal()` | `meta.value.id === undefined` (never persisted) | `error` = `'Este dataset ainda não foi persistido; use "Salvar nova versão".'`, returns `false` |
+| `overwriteOriginal()` | `meta.value.id === undefined` (never persisted) | `error` = `'Este dataset ainda não foi persistido; use "Salvar como cópia".'`, returns `false` |
 | `overwriteOriginal()` | `id` defined but record missing in `files` | `error` = `'Arquivo original não encontrado para sobrescrever.'`, returns `false` |
-| `overwriteOriginal()` | `id` defined, record exists | `overwriteFile(id, patch)` replaces `content`/metadata, preserves `id`/`created_at`, bumps `last_opened_at`; returns `true` |
+| `overwriteOriginal()` | `id` defined, record exists | `overwriteFile(id, patch)` replaces `content`/metadata, preserves `id`/`created_at`, bumps `last_opened_at`; calls `markSaved()`; returns `true` |
 
 - Both actions share `isBusy`/`error` refs, reset `error` at the start of each call, and never mutate/clear the in-memory dataset on failure — a write error leaves the user's edits intact for a retry.
 - Failures are logged (`console.error`) in addition to populating `error`.
+
+### Unsaved-changes navigation guard
+Implementing file: `app/composables/useUnsavedChangesGuard.ts` (`guardNavigation`, `openSaveCopyModal`, `confirmSaveCopy`, `confirmOverwrite`, `discard`, `cancel`); consumed by `app/layouts/default.vue` (logo/"Voltar") and `app/pages/viewer.vue` ("Comparar").
+
+| Action | Precondition | Effect |
+| --- | --- | --- |
+| `guardNavigation(path)` | `hasUnsavedChanges` (from `useCellEditing`) is `false` | Navigates to `path` immediately, no modal |
+| `guardNavigation(path)` | `hasUnsavedChanges` is `true` | `pendingPath` stores `path`; `UnsavedChangesModal` opens (`isOpen = true`) |
+| `openSaveCopyModal()` | `UnsavedChangesModal` open, user picks "Salvar como cópia" | Closes it, opens `SaveCopyModal` (`showSaveCopyModal = true`) — the write only happens on `confirmSaveCopy`, not on this click |
+| `confirmSaveCopy(name?)` | User confirms the naming step | Calls `saveNewVersion(name)`; on success, navigates to `pendingPath` and closes both modals; on failure, modal stays open with `error` populated |
+| `confirmOverwrite()` | User picks "Salvar" (overwrite) in `UnsavedChangesModal` | Calls `overwriteOriginal()`; same success/failure branching as above |
+| `discard()` | User picks "Descartar" | Navigates to `pendingPath` immediately, discarding in-memory edits (the undo stack is not cleared, but the route change abandons the dataset) |
+| `cancel()` / dismiss | User closes either modal without choosing | Closes the modal(s), clears `pendingPath`; no navigation |
+
+- `canOverwrite` (exposed to `UnsavedChangesModal`) is `meta.value?.id !== undefined` — disables "Salvar" for a dataset never persisted (fresh upload), forcing "Salvar como cópia" instead, mirroring `overwriteOriginal()`'s own precondition.
+- `suggestedCopyName` reuses `nextCopyName(meta.value?.name ?? '')` (`app/services/formatFile.ts`) to pre-fill `SaveCopyModal`, the same default `saveNewVersion()` falls back to when no `customName` is given.
+
+### File comparison: pairing, diff classification, and size ceiling
+Implementing files: `app/services/diffDatasets.ts` (`pairByKey`, `pairByPosition`, `diffRecord`, `valuesEqual`, `diffDatasets`); `app/composables/useComparisonDatasets.ts` (dataset B lifecycle, size ceiling).
+
+| Condition | Pairing strategy |
+| --- | --- |
+| `options.keyColumn` set and present in `commonKeyColumns(headerA, headerB)` | `pairByKey`: builds a `Map<value, rowIndex>` per dataset off the key column; a key present in both maps pairs those rows; a key present in only one map becomes `added` (B-only) or `removed` (A-only) |
+| No `keyColumn`, or it's absent from the common columns | `pairByPosition`: row *N* of A pairs with row *N* of B; the longer dataset's tail rows become `added`/`removed` |
+| Duplicate key within one dataset (`pairByKey`) | `Map.set` in row order keeps the **last** occurrence of that key — earlier duplicate rows are silently superseded, not reported |
+
+- A paired record (present in both sides) is classified via `diffRecord`: `changed` if any common column diverges under `valuesEqual`, else `unchanged`. `diffColumns` lists the diverging column names (empty outside `changed`).
+- `valuesEqual(type, a, b)`: `number` columns compare by `parseNumber` value (`"10"` == `"10.0"`); `date` columns compare by `parseDate` timestamp (different formats, same instant, are equal); everything else — including a mismatch where one side fails to parse — compares by exact string equality.
+- The type used per common column requires **both** A and B to independently infer the same non-text type (`number` or `date`) for that column (`inferColumnType` run separately on each side's values); any disagreement, or either side resolving to a non-`number`/`date` type, falls back to exact-string comparison — a documented conservative reading of divergent per-side type inference.
+- `commonKeyColumns(headerA, headerB)` (name intersection, ordered by A's header) is both the source for `pairByKey`'s implicit fallback check and the key-column dropdown's option list (`compare.vue`'s `availableKeyColumns`).
+- Size ceiling (`useComparisonDatasets.ts`, `MAX_COMPARISON_SIZE_BYTES = 50 * 1024 * 1024`, `MAX_COMPARISON_ROWS = 1_000_000`): applied independently to dataset B after parsing (`exceedsCeiling(sizeBytes, rowCount)`) inside both `openFileB`/`reopenRecentB`; exceeding either bound sets `comparisonError` and aborts before `datasetB`/`metaB` are assigned — the previous B (if any) is left untouched.
+- Dataset B is **never** persisted: `openFileB`/`reopenRecentB` never call `useFilesStore().saveFile()`/`touchFile()`; `reopenRecentB` reads an existing A-side recent file via `filesStore.getFile(id)` only, a pure read with no side effect on `last_opened_at`.
+- Switching dataset A (a new `meta.value.id` on `useCurrentDataset()`) clears the entire comparison (`clearComparison()`: `datasetB`, `metaB`, `keyColumn`, `comparisonError` all reset) via a `flush: 'sync'` watcher, so a stale B is never compared against a newly opened A.
+- To extend: a new `RecordStatus` or pairing strategy requires a new branch in `diffDatasets`' pair-classification loop and a corresponding `ComparisonCounts` field — `diffRecord`/`valuesEqual` need no change unless the new status also needs column-level divergence.
 
 ### Export scope, projection, and per-format generation
 Implementing files: `app/composables/useExportModal.ts` (orchestration); `app/services/exportData.ts` (CSV/JSON/Markdown/SQL); `app/services/exportXlsx.ts` (XLSX).
