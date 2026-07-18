@@ -255,7 +255,6 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       title="Salvar?"
       :message="`Isso substituirá permanentemente o conteúdo de “${meta?.name ?? ''}”. As edições não salvas como cópia serão perdidas do arquivo original — esta ação não pode ser desfeita.`"
       confirm-label="Salvar"
-      danger
       :busy="isSaving"
       @confirm="onConfirmOverwrite"
       @close="showOverwriteConfirm = false"

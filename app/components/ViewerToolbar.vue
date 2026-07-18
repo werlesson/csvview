@@ -536,9 +536,9 @@ function onTogglePin(index: number): void {
   color: var(--accent-fg);
 }
 
-/* "Salvar nova versão"/"Salvar" (sobrescrever original) trocam de cor conforme o
-   contexto (accent sólido/accent/warning) — o ícone acompanha em vez de ficar
-   preso ao cinza padrão de `.toolbar__icon`. */
+/* "Salvar nova versão"/"Salvar" (sobrescrever original): fundo accent-sólido
+   com texto branco — o ícone acompanha em vez de ficar preso ao cinza padrão
+   de `.toolbar__icon`. */
 .toolbar__save-version .toolbar__icon,
 .toolbar__overwrite .toolbar__icon {
   color: inherit;
@@ -650,9 +650,8 @@ function onTogglePin(index: number): void {
   border-color: var(--accent-hover);
 }
 
-/* "Sobrescrever original" (RF-15, CT-04): visualmente distinto de "Salvar nova
-   versão" — borda de aviso, fundo transparente, para sinalizar uma ação destrutiva
-   (substitui o registro original) que nunca é disparada pelo botão padrão. */
+/* "Sobrescrever original" (RF-15, CT-04): mesmo padrão visual accent-sólido
+   do sistema (igual "Salvar nova versão"/"Exportar"). */
 .toolbar__overwrite {
   display: inline-flex;
   align-items: center;
@@ -661,16 +660,17 @@ function onTogglePin(index: number): void {
   font-size: 14px;
   font-weight: 500;
   padding: 8px 12px;
-  background: transparent;
-  color: var(--warning);
-  border: 1px solid var(--warning);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid var(--accent);
   border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .toolbar__overwrite:hover:not(:disabled) {
-  background: var(--warning-soft);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .toolbar__overwrite:disabled {
