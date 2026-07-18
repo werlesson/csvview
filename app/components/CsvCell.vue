@@ -83,7 +83,7 @@ watch(
   { immediate: true },
 )
 
-/** Clique ou duplo-clique numa célula editável entra em modo de edição (RF-01). */
+/** Duplo-clique numa célula editável entra em modo de edição (RF-01). */
 function onActivate(): void {
   if (!props.editable || props.editing) return
   emit('edit-start')
@@ -124,7 +124,6 @@ function onKeydown(event: KeyboardEvent): void {
       editing ? 'csv-cell--editing' : '',
     ]"
     :title="isEmpty || editing ? undefined : display"
-    @click="onActivate"
     @dblclick="onActivate"
   >
     <input
@@ -194,7 +193,7 @@ function onKeydown(event: KeyboardEvent): void {
   vertical-align: middle;
 }
 
-/* Célula editável (cell-editing, RF-01): indica que clique/duplo-clique entra em edição. */
+/* Célula editável (cell-editing, RF-01): indica que duplo-clique entra em edição. */
 .csv-cell--editable {
   cursor: pointer;
 }
@@ -257,9 +256,9 @@ function onKeydown(event: KeyboardEvent): void {
   background-image: repeating-linear-gradient(
     45deg,
     var(--border) 0,
-    var(--border) 4px,
-    var(--bg-2) 4px,
-    var(--bg-2) 8px
+    var(--border) 2px,
+    var(--bg-1) 2px,
+    var(--bg-1) 8px
   );
 }
 

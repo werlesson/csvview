@@ -1,11 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import DefaultLayout from '~/layouts/default.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useTheme } from '~/composables/useTheme'
+import { useCellEditing } from '~/composables/useCellEditing'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import { useFilesStore } from '~/composables/useFilesStore'
+import { deleteDatabase } from '~/composables/useDatabase'
 
 vi.mock('vue-router', () => ({
   useRoute: vi.fn(() => ({ path: '/' })),
@@ -176,5 +181,142 @@ describe('DefaultLayout — regressão e fechamento (T11)', () => {
     expect(mediaBlockBody).not.toContain('brand__badge')
     expect(mediaBlockBody).toContain('.app-header__inner')
     expect(mediaBlockBody).toContain('.app-content')
+  })
+})
+
+describe('DefaultLayout — guard de alterações não salvas ao clicar em "Voltar"/logo', () => {
+  let nextId = 1000
+
+  function loadDataset(): void {
+    useCurrentDataset().setDataset(
+      { header: ['id', 'name'], rows: [['1', 'Ana']] },
+      {
+        id: nextId++,
+        name: 'dados.csv',
+        delimiter: 'comma',
+        sizeBytes: 10,
+        rowCount: 1,
+        columnCount: 2,
+      },
+    )
+  }
+
+  function makeDirty(): void {
+    const { beginEdit, confirmEdit } = useCellEditing()
+    beginEdit(0, 1)
+    confirmEdit('Bruna')
+  }
+
+  beforeEach(async () => {
+    await deleteDatabase()
+    vi.mocked(useRoute).mockReturnValue({ path: '/viewer' } as ReturnType<typeof useRoute>)
+    loadDataset()
+    useUnsavedChangesGuard().cancel()
+  })
+
+  afterEach(async () => {
+    await deleteDatabase()
+    useCurrentDataset().clearDataset()
+    vi.mocked(useRoute).mockReturnValue({ path: '/' } as ReturnType<typeof useRoute>)
+    vi.restoreAllMocks()
+  })
+
+  it('sem edição pendente, clicar no botão de voltar navega direto para "/"', async () => {
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const wrapper = mount(DefaultLayout)
+
+    await wrapper.get('.back-button').trigger('click')
+
+    expect(navigateToSpy).toHaveBeenCalledWith('/')
+    expect(wrapper.find('.unsaved-overlay').exists()).toBe(false)
+  })
+
+  it('com edição pendente, clicar no botão de voltar abre o modal em vez de navegar', async () => {
+    makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const wrapper = mount(DefaultLayout)
+
+    await wrapper.get('.back-button').trigger('click')
+
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(wrapper.find('.unsaved-overlay').exists()).toBe(true)
+    expect(wrapper.get('.unsaved-overlay__message').text()).toContain('dados.csv')
+  })
+
+  it('"Sair sem salvar" no modal navega para "/" e fecha o modal', async () => {
+    makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const wrapper = mount(DefaultLayout)
+    await wrapper.get('.back-button').trigger('click')
+
+    await wrapper.get('.unsaved-overlay__discard').trigger('click')
+
+    expect(navigateToSpy).toHaveBeenCalledWith('/')
+    expect(wrapper.find('.unsaved-overlay').exists()).toBe(false)
+  })
+
+  it('"Cancelar" no modal fecha sem navegar, mantendo o usuário na tela', async () => {
+    makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const wrapper = mount(DefaultLayout)
+    await wrapper.get('.back-button').trigger('click')
+
+    await wrapper.get('.unsaved-overlay__cancel').trigger('click')
+
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(wrapper.find('.unsaved-overlay').exists()).toBe(false)
+  })
+
+  it('"Salvar como cópia e sair" abre o modal de nomeação (pré-preenchido), permite editar o nome e só então salva e navega', async () => {
+    makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const filesStore = useFilesStore()
+    const wrapper = mount(DefaultLayout)
+    await wrapper.get('.back-button').trigger('click')
+
+    await wrapper.get('.unsaved-overlay__save-copy').trigger('click')
+
+    expect(wrapper.find('.unsaved-overlay').exists()).toBe(false)
+    const nameInput = wrapper.get<HTMLInputElement>('.save-copy-overlay__input')
+    expect(nameInput.element.value).toBe('dados (cópia).csv')
+    expect(navigateToSpy).not.toHaveBeenCalled()
+
+    // Permite trocar o nome, inclusive repetindo o nome do original.
+    await nameInput.setValue('dados.csv')
+    await wrapper.get('.save-copy-overlay__confirm').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    const files = await filesStore.listFiles()
+    expect(files).toHaveLength(1)
+    expect(files[0]?.name).toBe('dados.csv')
+    expect(navigateToSpy).toHaveBeenCalledWith('/')
+  })
+
+  it('cancelar o modal de nomeação não salva nem navega, mantendo o usuário na tela', async () => {
+    makeDirty()
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+    const filesStore = useFilesStore()
+    const wrapper = mount(DefaultLayout)
+    await wrapper.get('.back-button').trigger('click')
+    await wrapper.get('.unsaved-overlay__save-copy').trigger('click')
+
+    await wrapper.get('.save-copy-overlay__cancel').trigger('click')
+
+    expect(wrapper.find('.save-copy-overlay').exists()).toBe(false)
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(await filesStore.listFiles()).toHaveLength(0)
   })
 })

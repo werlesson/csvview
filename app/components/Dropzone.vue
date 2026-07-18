@@ -145,24 +145,53 @@ function onInputChange(event: Event): void {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 48px 24px;
-  background: var(--bg-1);
-  border: 1.5px dashed var(--border-strong);
+  padding: 34px 24px;
+  border: 1.5px solid transparent;
   border-radius: var(--radius-lg);
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+  /* Borda pontilhada "andando": 4 faixas finas (topo/base/esquerda/direita)
+     em vez de um `border` estático, para poder animar a posição do padrão
+     (RF-06). Some no hover/drag-over, onde um `border` sólido de verdade
+     assume o realce. */
+  background-image:
+    linear-gradient(90deg, var(--border-strong) 50%, transparent 50%),
+    linear-gradient(90deg, var(--border-strong) 50%, transparent 50%),
+    linear-gradient(0deg, var(--border-strong) 50%, transparent 50%),
+    linear-gradient(0deg, var(--border-strong) 50%, transparent 50%);
+  background-size: 16px 1.5px, 16px 1.5px, 1.5px 16px, 1.5px 16px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-color: var(--bg-1);
+  /* Alinha o fundo com a borda (não com o padding-box, o padrão) — assim as
+     faixas ficam exatamente sob a borda transparente, e um `border-color`
+     real (hover/drag-over) as cobre em vez de deixá-las visíveis por cima. */
+  background-origin: border-box;
+  animation: dropzone-dash 1s linear infinite;
+  transition: border-color 0.2s ease, background-color 0.2s ease, opacity 0.2s ease;
+}
+
+@keyframes dropzone-dash {
+  to {
+    background-position: 16px 0, -16px 100%, 0 -16px, 100% 16px;
+  }
 }
 
 .dropzone:hover {
   border-color: var(--accent);
 }
 
-/* Estado drag-over — realce com accent enquanto o arquivo paira. */
+/* Estado drag-over — realce com accent enquanto o arquivo paira; a borda
+   sólida cobre visualmente a animação pontilhada nesse estado. */
 .dropzone--drag-over {
   border-color: var(--accent);
-  border-style: solid;
-  background: var(--accent-soft);
+  background-color: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone {
+    animation: none;
+  }
 }
 
 .dropzone--disabled {
@@ -170,7 +199,8 @@ function onInputChange(event: Event): void {
   pointer-events: none;
 }
 
-/* Ícone dentro de um quadrado arredondado accent-soft, fiel ao design. */
+/* Ícone dentro de um badge em gradiente accent, com leve flutuação —
+   fiel ao mock 1a. */
 .dropzone__icon-wrap {
   display: inline-flex;
   align-items: center;
@@ -178,13 +208,34 @@ function onInputChange(event: Event): void {
   width: 56px;
   height: 56px;
   margin-bottom: 8px;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--accent-fg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
   border-radius: var(--radius-lg);
+  /* Glow do badge (fiel ao mock 1a) — blur/offset generosos criam o efeito
+     de brilho mesmo com uma cor de sombra "cheia" (sem token de baixa
+     opacidade dedicado a isso). */
+  box-shadow: 0 14px 34px -10px color-mix(in srgb, var(--accent) 75%, transparent);
+  animation: dropzone-float 3.2s ease-in-out infinite;
+}
+
+@keyframes dropzone-float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dropzone__icon-wrap {
+    animation: none;
+  }
 }
 
 /* Feedback animado enquanto um arquivo está sendo aberto (RF-06a): pulso
-   perceptível no ícone, além do fade de opacidade em .dropzone--disabled. */
+   perceptível no ícone (substitui a flutuação), além do fade de opacidade
+   em .dropzone--disabled. */
 .dropzone--disabled .dropzone__icon-wrap {
   animation: dropzone-pulse 0.25s ease-in-out infinite;
 }

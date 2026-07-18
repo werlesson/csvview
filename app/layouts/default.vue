@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import LogoMark from '~/components/LogoMark.vue'
 import ThemeToggle from '~/components/ThemeToggle.vue'
+import UnsavedChangesModal from '~/components/UnsavedChangesModal.vue'
+import SaveCopyModal from '~/components/SaveCopyModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 // Na barra de título, exibimos o nome do arquivo quando estamos no Viewer
 // (fiel ao design da Screen 2); nas demais rotas, a marca do produto.
@@ -11,23 +14,87 @@ const route = useRoute()
 const { meta } = useCurrentDataset()
 const isViewer = computed(() => route.path === '/viewer')
 const isUpload = computed(() => route.path === '/')
+// Viewer/Compare têm tabelas virtualizadas (@tanstack/vue-virtual) cujo
+// scroller mede a altura do ancestral (`.app-content`) — precisam do shell
+// com altura travada (100dvh) para o scroll ficar confinado à tabela. Só a
+// Upload não precisa: o footer aí segue o fluxo normal da página.
+const isBoundedContent = computed(() => route.path !== '/')
 const currentFile = computed(() =>
   isViewer.value ? (meta.value?.name ?? null) : null,
 )
 const currentYear = new Date().getFullYear()
 
+/**
+ * Guarda de saída do Viewer com edições pendentes (mesmo composable
+ * consumido por `viewer.vue` para o "Comparar") — o modal vive aqui, no
+ * layout, por ser o ancestral comum a todas as rotas.
+ */
+const {
+  isOpen: showUnsavedChanges,
+  showSaveCopyModal,
+  suggestedCopyName,
+  fileName: unsavedFileName,
+  canOverwrite,
+  isBusy: isSavingBeforeLeave,
+  guardNavigation,
+  openSaveCopyModal,
+  cancelSaveCopyModal,
+  confirmSaveCopy,
+  confirmOverwrite,
+  discard,
+  cancel,
+} = useUnsavedChangesGuard()
+
 // Navegação client-side ao clicar na logo/voltar: evita o reload de página
 // inteira de um <a href> puro, para que a transição "view" (fade, RF-07)
-// realmente seja reproduzida ao sair do Viewer.
+// realmente seja reproduzida ao sair do Viewer — passa pelo guard de
+// alterações não salvas antes de navegar de fato.
 function goHome(event: MouseEvent): void {
   event.preventDefault()
-  navigateTo('/')
+  guardNavigation('/')
 }
+
+/**
+ * Header nasce transparente (revela o glow do shell) e ganha fundo sólido
+ * depois de ~70px de scroll — precisa observar tanto a janela (Upload, onde
+ * a página inteira rola) quanto `.app-content` (Viewer/Compare, onde é esse
+ * elemento que rola dentro do shell travado em 100dvh).
+ */
+const HEADER_SCROLL_THRESHOLD = 60
+const contentRef = ref<HTMLElement | null>(null)
+const isHeaderScrolled = ref(false)
+
+function updateHeaderScrolled(): void {
+  const contentScrollTop = contentRef.value?.scrollTop ?? 0
+  const windowScrollTop = window.scrollY
+  isHeaderScrolled.value = Math.max(contentScrollTop, windowScrollTop) > HEADER_SCROLL_THRESHOLD
+}
+
+onMounted(() => {
+  window.addEventListener('scroll', updateHeaderScrolled, { passive: true })
+  contentRef.value?.addEventListener('scroll', updateHeaderScrolled, { passive: true })
+  updateHeaderScrolled()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', updateHeaderScrolled)
+  contentRef.value?.removeEventListener('scroll', updateHeaderScrolled)
+})
+
+// Ao trocar de rota o scroll do novo elemento pode já começar em outro
+// ponto (ex.: volta pro Upload no topo) — recalcula sem esperar um scroll.
+watch(
+  () => route.path,
+  () => nextTick(updateHeaderScrolled),
+)
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'app-shell--glow': isUpload }">
-    <header class="app-header">
+  <div
+    class="app-shell"
+    :class="{ 'app-shell--glow': isUpload, 'app-shell--bounded': isBoundedContent }"
+  >
+    <header class="app-header" :class="{ 'app-header--scrolled': isHeaderScrolled }">
       <div class="app-header__inner">
         <div class="brand-group">
           <a
@@ -66,11 +133,18 @@ function goHome(event: MouseEvent): void {
           </template>
         </div>
 
-        <ThemeToggle />
+        <div class="app-header__actions">
+          <span class="app-header__version">v2.4</span>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
 
-    <main class="app-content" :class="{ 'app-content--wide': isViewer }">
+    <main
+      ref="contentRef"
+      class="app-content"
+      :class="{ 'app-content--wide': isViewer, 'app-content--bounded': isBoundedContent }"
+    >
       <slot />
     </main>
 
@@ -134,6 +208,26 @@ function goHome(event: MouseEvent): void {
         </div>
       </div>
     </footer>
+
+    <UnsavedChangesModal
+      :open="showUnsavedChanges"
+      :file-name="unsavedFileName"
+      :can-overwrite="canOverwrite"
+      :busy="isSavingBeforeLeave"
+      @save-copy="openSaveCopyModal"
+      @overwrite="confirmOverwrite"
+      @discard="discard"
+      @close="cancel"
+    />
+
+    <SaveCopyModal
+      :open="showSaveCopyModal"
+      :file-name="unsavedFileName"
+      :suggested-name="suggestedCopyName"
+      :busy="isSavingBeforeLeave"
+      @confirm="confirmSaveCopy"
+      @close="cancelSaveCopyModal"
+    />
   </div>
 </template>
 
@@ -141,37 +235,63 @@ function goHome(event: MouseEvent): void {
 .app-shell {
   position: relative;
   isolation: isolate;
-  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
 }
 
-/* Glows radiais sutis no fundo da tela de Upload — vivem no shell (não na
-   página) para se estenderem até a borda real da viewport, e não ficarem
-   confinados à largura do conteúdo (.upload, max-width 1040px). Header e
-   footer têm fundo opaco (--bg-1), então os glows só aparecem atrás do
-   conteúdo central, como pretendido. Todas as camadas usam a cor primária
-   (--accent) — só a marca, sem cores de status (info/success) — variando
-   posição/tamanho pra dar profundidade. */
-.app-shell--glow::before {
+/* Viewer/Compare: altura travada na viewport, para o scroll ficar confinado
+   à tabela (.app-content flex:1 + overflow-y:auto vira uma janela de altura
+   fixa). Upload: sem essa classe, o shell só cresce (min-height acima) e o
+   footer segue o fluxo normal — a página toda rola se precisar. */
+.app-shell--bounded {
+  height: 100dvh;
+}
+
+/* Fundo do sistema todo (todas as rotas) — vive no shell (não na página)
+   para se estender até a borda real da viewport, e não ficar confinado à
+   largura do conteúdo. Posição do glow fiel ao mock "1a · Split editorial";
+   a cor usa --accent-soft (em vez do roxo fixo do mock) para o glow ficar no
+   mesmo tom do resto da paleta (botão Exportar, badge "dup", toggle de
+   tema) — dark e claro seguem a mesma regra, só os tokens mudam de valor. */
+.app-shell::before {
   content: '';
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(760px 520px at 30% -8%, var(--accent-soft), transparent 70%),
-    radial-gradient(620px 480px at 88% 100%, var(--accent-soft), transparent 70%);
+    radial-gradient(1100px 560px at 78% -8%, var(--glow), transparent 60%),
+    var(--bg);
 }
 
+/* Fundo transparente em todas as rotas, para o fundo do shell
+   (.app-shell::before) atravessar o header por igual em qualquer página —
+   até passar de ~60px de scroll (ver `isHeaderScrolled`), quando ganha um
+   fundo translúcido com leve desfoque (efeito "vidro"), pra continuar
+   legível sobre o conteúdo que passa a rolar por baixo dele. A borda
+   inferior fica sempre visível, independente do scroll. */
 .app-header {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--bg-1);
+  background: transparent;
   border-bottom: 1px solid var(--border);
+  transition: background-color 0.25s ease, backdrop-filter 0.25s ease, box-shadow 0.25s ease;
+}
+
+.app-header--scrolled {
+  background: color-mix(in srgb, var(--bg-1) 85%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-header {
+    transition: none;
+  }
 }
 
 .app-header__inner {
@@ -182,6 +302,18 @@ function goHome(event: MouseEvent): void {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.app-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header__version {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
 }
 
 .brand-group {
@@ -262,13 +394,18 @@ function goHome(event: MouseEvent): void {
 
 .app-content {
   flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   max-width: 1280px;
   width: 100%;
   margin: 0 auto;
   padding: 24px 20px;
+}
+
+/* Só Viewer/Compare: vira uma janela de altura fixa (o shell tem
+   height:100dvh nessa rota) para o scroll ficar confinado à tabela. */
+.app-content--bounded {
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -279,6 +416,10 @@ function goHome(event: MouseEvent): void {
 .app-footer {
   border-top: 1px solid var(--border);
   background: var(--bg-1);
+}
+
+.app-shell--glow .app-footer {
+  background: transparent;
 }
 
 .app-footer__inner {

@@ -466,7 +466,7 @@ watch(
   height: 36px;
   min-width: 0;
   padding: 0 12px;
-  background: var(--bg-2);
+  background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text);
@@ -481,7 +481,6 @@ watch(
 .filter-card__input:focus {
   outline: none;
   border-color: var(--accent);
-  background: var(--bg-1);
 }
 
 .filter-overlay__add {

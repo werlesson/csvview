@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  extractHeaderTags,
   formatBytes,
   formatRelativeTime,
   formatRowCount,
+  nextCopyName,
 } from '~/services/formatFile'
 
 describe('formatFile', () => {
@@ -50,6 +52,77 @@ describe('formatFile', () => {
 
     it('trata diferenças negativas como "agora"', () => {
       expect(formatRelativeTime(now + 10_000, now)).toBe('agora')
+    })
+  })
+
+  describe('nextCopyName', () => {
+    it('insere "(cópia)" antes da extensão', () => {
+      expect(nextCopyName('transactions.csv')).toBe('transactions (cópia).csv')
+    })
+
+    it('incrementa o número ao aplicar sobre um nome já marcado como cópia', () => {
+      expect(nextCopyName('transactions (cópia).csv')).toBe('transactions (cópia 2).csv')
+      expect(nextCopyName('transactions (cópia 2).csv')).toBe('transactions (cópia 3).csv')
+      expect(nextCopyName('transactions (cópia 9).csv')).toBe('transactions (cópia 10).csv')
+    })
+
+    it('funciona sem extensão', () => {
+      expect(nextCopyName('README')).toBe('README (cópia)')
+    })
+
+    it('preserva múltiplos pontos no nome, usando só a última extensão', () => {
+      expect(nextCopyName('relatorio.2026.csv')).toBe('relatorio.2026 (cópia).csv')
+    })
+  })
+
+  describe('extractHeaderTags', () => {
+    it('separa os nomes de coluna da primeira linha pelo delimitador', () => {
+      const result = extractHeaderTags('id,nome,valor\n1,Ana,10', 'comma')
+      expect(result).toEqual({ names: ['id', 'nome', 'valor'], overflow: 0 })
+    })
+
+    it('respeita o delimitador semicolon/tab', () => {
+      expect(extractHeaderTags('id;nome;valor\n1;Ana;10', 'semicolon')).toEqual({
+        names: ['id', 'nome', 'valor'],
+        overflow: 0,
+      })
+      expect(extractHeaderTags('id\tnome\tvalor\n1\tAna\t10', 'tab')).toEqual({
+        names: ['id', 'nome', 'valor'],
+        overflow: 0,
+      })
+    })
+
+    it('limita ao número informado e reporta o excedente em "overflow"', () => {
+      const result = extractHeaderTags(
+        'imovel,bairro,valor,area,quartos,vagas,tipo,cidade,uf\n1,Centro,100,50,2,1,casa,SP,SP',
+        'comma',
+        3,
+      )
+      expect(result).toEqual({ names: ['imovel', 'bairro', 'valor'], overflow: 6 })
+    })
+
+    it('não reporta overflow quando a contagem é igual ao limite', () => {
+      const result = extractHeaderTags('a,b,c\n1,2,3', 'comma', 3)
+      expect(result).toEqual({ names: ['a', 'b', 'c'], overflow: 0 })
+    })
+
+    it('funciona com uma única coluna e sem quebra de linha', () => {
+      expect(extractHeaderTags('id', 'comma')).toEqual({ names: ['id'], overflow: 0 })
+    })
+
+    it('remove aspas envolvendo o nome da coluna', () => {
+      const result = extractHeaderTags('"id","nome com, vírgula"\n1,Ana', 'comma')
+      // Split simples (não aspas-aware): a vírgula dentro das aspas quebra o nome.
+      expect(result.names[0]).toBe('id')
+    })
+
+    it('ignora conteúdo vazio', () => {
+      expect(extractHeaderTags('', 'comma')).toEqual({ names: [], overflow: 0 })
+    })
+
+    it('trata CRLF sem incluir o \\r no último nome', () => {
+      const result = extractHeaderTags('id,nome\r\n1,Ana', 'comma')
+      expect(result.names).toEqual(['id', 'nome'])
     })
   })
 })

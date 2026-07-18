@@ -65,16 +65,15 @@ function onInput(event: Event): void {
   gap: 8px;
   width: 100%;
   padding: 0 12px;
-  background: var(--bg-2);
+  background: var(--bg-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-3);
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease;
 }
 
 .search:focus-within {
   border-color: var(--accent);
-  background: var(--bg-1);
 }
 
 .search__icon {

@@ -56,11 +56,31 @@ async function onDeleteRecent(id: number): Promise<void> {
           <span class="upload__seal-dot" aria-hidden="true" />
           100% no navegador · seus dados não saem daqui
         </p>
-        <h1 class="upload__title">O explorador de CSV para quem vive nos dados</h1>
+        <h1 class="upload__title">
+          O explorador de <span class="upload__title-accent">CSV</span><br>
+          para quem vive nos dados
+        </h1>
         <p class="upload__subtitle">
           Abra, filtre e analise arquivos CSV enormes direto no navegador —
           sem instalar nada e sem enviar seus dados para nenhum servidor.
         </p>
+
+        <dl class="upload__stats">
+          <div class="upload__stat">
+            <dt class="upload__stat-value">2M+</dt>
+            <dd class="upload__stat-label">linhas suportadas</dd>
+          </div>
+          <span class="upload__stat-divider" aria-hidden="true" />
+          <div class="upload__stat">
+            <dt class="upload__stat-value">0kb</dt>
+            <dd class="upload__stat-label">enviados à rede</dd>
+          </div>
+          <span class="upload__stat-divider" aria-hidden="true" />
+          <div class="upload__stat">
+            <dt class="upload__stat-value">.csv .tsv</dt>
+            <dd class="upload__stat-label">e .txt</dd>
+          </div>
+        </dl>
       </header>
 
       <Dropzone :disabled="isOpening" @select="onSelect" />
@@ -87,9 +107,7 @@ async function onDeleteRecent(id: number): Promise<void> {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 44px;
   align-items: start;
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 40px 0;
+  padding: 24px 0;
   flex: 1;
   min-height: 0;
 }
@@ -106,23 +124,37 @@ async function onDeleteRecent(id: number): Promise<void> {
 .upload__main {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .upload__hero {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
+  gap: 12px;
   text-align: left;
 }
 
 .upload__title {
-  font-size: 44px;
-  font-weight: 600;
+  /* clamp em vez de um valor fixo: encolhe para dar mais margem antes do
+     limite de nowrap abaixo. white-space:nowrap não afasta o <br> forçado
+     (ele sempre quebra) — só impede que "para quem vive nos dados" quebre
+     de novo por falta de espaço. */
+  font-size: clamp(30px, 3.6vw, 44px);
+  font-weight: 700;
   line-height: 1.1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   color: var(--text);
+  white-space: nowrap;
+}
+
+/* "CSV" em destaque com texto em gradiente accent, fiel ao mock 1a. */
+.upload__title-accent {
+  background: linear-gradient(120deg, var(--accent-hover), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
 
 .upload__subtitle {
@@ -149,6 +181,59 @@ async function onDeleteRecent(id: number): Promise<void> {
   height: 7px;
   border-radius: 50%;
   background: var(--success);
+  box-shadow: 0 0 10px var(--success);
+  animation: upload-seal-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes upload-seal-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .upload__seal-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Faixa de estatísticas (2M+ linhas · 0kb enviados · formatos), fiel ao
+   mock 1a — logo abaixo do subtítulo, antes da dropzone. */
+.upload__stats {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 4px 0 0;
+}
+
+.upload__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.upload__stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.upload__stat-label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.upload__stat-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--border);
 }
 
 .upload__error {
@@ -171,6 +256,15 @@ async function onDeleteRecent(id: number): Promise<void> {
 
   .upload__title {
     font-size: 34px;
+    /* Empilhado (1 coluna) há espaço de sobra na vertical — deixa "para
+       quem vive nos dados" quebrar normalmente em telas estreitas, em vez
+       de arriscar overflow horizontal com nowrap. */
+    white-space: normal;
+  }
+
+  .upload__stats {
+    flex-wrap: wrap;
+    gap: 14px 22px;
   }
 }
 </style>

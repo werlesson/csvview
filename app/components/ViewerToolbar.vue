@@ -37,6 +37,13 @@ const props = withDefaults(
     canUndo?: boolean
     /** `true` quando há ao menos uma entrada refazível no histórico do dataset atual (RF-09). */
     canRedo?: boolean
+    /**
+     * `true` quando há alteração ainda não persistida pelo último "Salvar
+     * como cópia"/"Sobrescrever original" — independente de `canUndo`/
+     * `canRedo` (que só refletem a existência de histórico, não se ele já
+     * foi salvo). Controla se "Salvar" está habilitado.
+     */
+    hasUnsavedChanges?: boolean
     /** Mensagem de erro da última escrita de "Salvar nova versão"/"Sobrescrever original" (RNF-02). */
     saveError?: string | null
   }>(),
@@ -44,6 +51,7 @@ const props = withDefaults(
     activeFilterCount: 0,
     canUndo: false,
     canRedo: false,
+    hasUnsavedChanges: false,
     saveError: null,
   },
 )
@@ -87,7 +95,14 @@ function onSaveNewVersion(): void {
   emit('save-new-version')
 }
 
+/**
+ * Emite o pedido de sobrescrita — o pai (`viewer.vue`) é quem decide exibir
+ * a confirmação (modal) antes de chamar `overwriteOriginal()` de fato. Sem
+ * alteração pendente desde o último save (`hasUnsavedChanges` falso), não há
+ * o que sobrescrever.
+ */
 function onOverwriteOriginal(): void {
+  if (!props.hasUnsavedChanges) return
   emit('overwrite-original')
 }
 
@@ -226,106 +241,11 @@ function onTogglePin(index: number): void {
     </div>
 
     <div class="toolbar__meta">
-      <button
-        type="button"
-        class="toolbar__compare"
-        aria-label="Comparar"
-        @click="onOpenCompare"
-      >
-        <svg
-          class="toolbar__icon"
-          viewBox="0 0 16 16"
-          width="15"
-          height="15"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <path
-            d="M5.5 2 2 5.5 5.5 9 M2 5.5 H9.5 M10.5 7 14 10.5 10.5 14 M14 10.5 H6.5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <span>Comparar</span>
-      </button>
-
       <span v-if="saveError" class="toolbar__save-error" role="alert">{{ saveError }}</span>
 
-      <div class="toolbar__history" role="group" aria-label="Desfazer/Refazer">
-        <button
-          type="button"
-          class="toolbar__history-btn"
-          aria-label="Desfazer"
-          :disabled="!canUndo"
-          @click="onUndo"
-        >
-          <svg
-            class="toolbar__icon"
-            viewBox="0 0 16 16"
-            width="15"
-            height="15"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path
-              d="M6 3.5 2.5 7 6 10.5 M2.5 7 H10 A3.5 3.5 0 0 1 10 14 H8"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span>Desfazer</span>
-        </button>
-        <button
-          type="button"
-          class="toolbar__history-btn"
-          aria-label="Refazer"
-          :disabled="!canRedo"
-          @click="onRedo"
-        >
-          <svg
-            class="toolbar__icon"
-            viewBox="0 0 16 16"
-            width="15"
-            height="15"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <path
-              d="M10 3.5 13.5 7 10 10.5 M13.5 7 H6 A3.5 3.5 0 0 0 6 14 H8"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.3"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span>Refazer</span>
-        </button>
-      </div>
+      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
 
-      <button
-        type="button"
-        class="toolbar__overwrite"
-        aria-label="Sobrescrever original"
-        @click="onOverwriteOriginal"
-      >
-        <span>Sobrescrever original</span>
-      </button>
-
-      <button
-        type="button"
-        class="toolbar__save-version"
-        aria-label="Salvar nova versão"
-        @click="onSaveNewVersion"
-      >
-        <span>Salvar nova versão</span>
-      </button>
+      <span class="toolbar__divider" aria-hidden="true"></span>
 
       <button
         type="button"
@@ -360,7 +280,191 @@ function onTogglePin(index: number): void {
         </svg>
         <span>Exportar</span>
       </button>
-      <span class="toolbar__count">{{ formatRowCount(rowCount) }} linhas</span>
+
+      <span class="toolbar__divider" aria-hidden="true"></span>
+
+      <!-- Menu "Mais ações" (Comparar, Desfazer, Refazer, Sobrescrever
+           original, Salvar nova versão): botão só de ícone (3 pontos),
+           sempre presente — reaproveita Dropdown.vue, como "Colunas". -->
+      <Dropdown class="toolbar__more" aria-label="Mais ações">
+        <template #trigger>
+          <svg
+            class="toolbar__icon"
+            viewBox="0 0 16 16"
+            width="15"
+            height="15"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <circle cx="8" cy="3.5" r="1.3" fill="currentColor" />
+            <circle cx="8" cy="8" r="1.3" fill="currentColor" />
+            <circle cx="8" cy="12.5" r="1.3" fill="currentColor" />
+          </svg>
+        </template>
+        <ul class="more-menu" role="none">
+          <li role="none">
+            <button
+              type="button"
+              class="toolbar__overwrite"
+              aria-label="Salvar (Ctrl+S)"
+              :disabled="!hasUnsavedChanges"
+              @click="onOverwriteOriginal"
+            >
+              <svg
+                class="toolbar__icon"
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M2.5 2.5 H11 L13.5 5 V13.5 H2.5 Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M4.5 2.5 V6.5 H10 V2.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+                <rect x="5" y="9" width="6" height="4.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+              </svg>
+              <span>Salvar</span>
+              <span class="more-menu__shortcut" aria-hidden="true">Ctrl+S</span>
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              class="toolbar__save-version"
+              aria-label="Salvar como cópia"
+              @click="onSaveNewVersion"
+            >
+              <svg
+                class="toolbar__icon"
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M4 2 H9.5 L12 4.5 V14 H4 Z"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M9.5 2 V4.5 H12"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linejoin="round"
+                />
+                <path
+                  d="M8 8 V11.5 M6.25 9.75 H9.75"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+              <span>Salvar como cópia</span>
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              class="toolbar__compare"
+              aria-label="Comparar"
+              @click="onOpenCompare"
+            >
+              <svg
+                class="toolbar__icon"
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M5.5 2 2 5.5 5.5 9 M2 5.5 H9.5 M10.5 7 14 10.5 10.5 14 M14 10.5 H6.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Comparar</span>
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              class="toolbar__history-btn"
+              aria-label="Desfazer (Ctrl+Z)"
+              :disabled="!canUndo"
+              @click="onUndo"
+            >
+              <svg
+                class="toolbar__icon"
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M6 3.5 2.5 7 6 10.5 M2.5 7 H10 A3.5 3.5 0 0 1 10 14 H8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Desfazer</span>
+              <span class="more-menu__shortcut" aria-hidden="true">Ctrl+Z</span>
+            </button>
+          </li>
+          <li role="none">
+            <button
+              type="button"
+              class="toolbar__history-btn"
+              aria-label="Refazer (Ctrl+R)"
+              :disabled="!canRedo"
+              @click="onRedo"
+            >
+              <svg
+                class="toolbar__icon"
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M10 3.5 13.5 7 10 10.5 M13.5 7 H6 A3.5 3.5 0 0 0 6 14 H8"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span>Refazer</span>
+              <span class="more-menu__shortcut" aria-hidden="true">Ctrl+R</span>
+            </button>
+          </li>
+        </ul>
+      </Dropdown>
     </div>
   </div>
 </template>
@@ -386,9 +490,16 @@ function onTogglePin(index: number): void {
   flex: 1;
 }
 
+/* Só a busca deve ceder espaço aqui — Filtros e Colunas (abaixo) nunca
+   encolhem, senão seu texto é espremido/cortado antes do breakpoint mobile
+   (640px) empilhar a toolbar. */
 .toolbar__search {
   flex: 0 1 360px;
   min-width: 0;
+}
+
+.toolbar__controls :deep(.dropdown) {
+  flex: none;
 }
 
 .toolbar__meta {
@@ -425,11 +536,27 @@ function onTogglePin(index: number): void {
   color: var(--accent-fg);
 }
 
+/* "Salvar nova versão"/"Salvar" (sobrescrever original) trocam de cor conforme o
+   contexto (accent sólido/accent/warning) — o ícone acompanha em vez de ficar
+   preso ao cinza padrão de `.toolbar__icon`. */
+.toolbar__save-version .toolbar__icon,
+.toolbar__overwrite .toolbar__icon {
+  color: inherit;
+}
+
 .toolbar__count {
   font-family: var(--mono);
   font-size: 13px;
   color: var(--text-3);
   white-space: nowrap;
+}
+
+/* Separador entre linhas/Exportar/Mais ações, na ordem pedida em UI-04. */
+.toolbar__divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  flex: none;
 }
 
 /* Mensagem de erro de "Salvar nova versão"/"Sobrescrever original" (RNF-02): exibida
@@ -542,8 +669,13 @@ function onTogglePin(index: number): void {
   white-space: nowrap;
 }
 
-.toolbar__overwrite:hover {
+.toolbar__overwrite:hover:not(:disabled) {
   background: var(--warning-soft);
+}
+
+.toolbar__overwrite:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toolbar__icon {
@@ -557,6 +689,7 @@ function onTogglePin(index: number): void {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex: none;
   font-family: var(--font);
   font-size: 14px;
   font-weight: 500;
@@ -672,6 +805,66 @@ function onTogglePin(index: number): void {
 
 .columns-menu__pin--active {
   color: var(--accent);
+}
+
+/* Gatilho "Mais ações": botão só de ícone (3 pontos) — mesma aparência
+   secundária dos outros controles, porém quadrado e sem rótulo visível (o
+   nome acessível vem de `aria-label`, ver Dropdown.vue). */
+.toolbar__more :deep(.dropdown__trigger) {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* Menu "Mais ações" (Salvar nova versão, Sobrescrever original, Comparar,
+   Desfazer, Refazer) — reaproveita os mesmos botões/classes usados antes
+   soltos na toolbar; aqui o layout vira "linha inteira", como item de menu. */
+.more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 200px;
+}
+
+/* Sem o fundo accent-sólido, o texto branco (--accent-fg) de "Salvar nova
+   versão" ficaria ilegível sobre o painel do menu (esp. no tema claro); e o
+   texto de aviso (--warning) de "Sobrescrever original" destacaria demais
+   uma ação usada no dia a dia — aqui os dois viram texto neutro, como as
+   demais ações (Comparar, Desfazer, Refazer). */
+.more-menu .toolbar__save-version,
+.more-menu .toolbar__overwrite {
+  color: var(--text);
+}
+
+.more-menu .toolbar__save-version,
+.more-menu .toolbar__compare,
+.more-menu .toolbar__history-btn,
+.more-menu .toolbar__overwrite {
+  width: 100%;
+  justify-content: flex-start;
+  background: none;
+  border: none;
+}
+
+.more-menu .toolbar__save-version:hover,
+.more-menu .toolbar__compare:hover,
+.more-menu .toolbar__history-btn:hover:not(:disabled),
+.more-menu .toolbar__overwrite:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* Dica de atalho de teclado (Ctrl+Z/Ctrl+R/Ctrl+S) — alinhada à direita do
+   item de menu, para o usuário descobrir o atalho sem precisar clicar. */
+.more-menu__shortcut {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
 }
 
 @media (max-width: 640px) {

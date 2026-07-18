@@ -119,10 +119,10 @@ describe('CsvCell', () => {
   })
 
   describe('modo de edição inline (cell-editing, T06)', () => {
-    it('RF-01: clique numa célula editable emite "edit-start"', async () => {
+    it('RF-01: clique único numa célula editable NÃO emite "edit-start" (só duplo-clique entra em edição)', async () => {
       const wrapper = mount(CsvCell, { props: { value: 'ana', editable: true } })
       await wrapper.trigger('click')
-      expect(wrapper.emitted('edit-start')).toEqual([[]])
+      expect(wrapper.emitted('edit-start')).toBeUndefined()
     })
 
     it('RF-01: duplo-clique numa célula editable emite "edit-start"', async () => {

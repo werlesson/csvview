@@ -3,7 +3,6 @@ import {
   SETTINGS_STORE,
   type SettingRecord,
 } from '~/composables/useDatabase'
-import { DEFAULT_THEME } from '~/composables/useTheme'
 
 /**
  * Acesso ao store `settings`: preferências chave/valor persistidas no
@@ -16,9 +15,14 @@ export const THEME_KEY = 'theme'
 /**
  * Defaults semeados quando a chave ainda não foi salva. Ler uma dessas chaves
  * sem valor persistido devolve o default correspondente.
+ *
+ * O valor de tema é um literal (não importado de `useTheme.ts`) para evitar
+ * um import circular entre os dois composables — `useTheme` já importa
+ * `useSettingsStore`. Precisa continuar igual a `DEFAULT_THEME` em
+ * `useTheme.ts`.
  */
 export const SETTINGS_DEFAULTS: Record<string, string> = {
-  [THEME_KEY]: DEFAULT_THEME,
+  [THEME_KEY]: 'dark',
 }
 
 /**

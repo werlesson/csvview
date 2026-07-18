@@ -891,7 +891,7 @@ describe('ViewerTable', () => {
       const bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
       const targetCell = bodyRows[0]!.findAll('.csv-cell')[1]! // linha 0, coluna "name"
 
-      await targetCell.trigger('click')
+      await targetCell.trigger('dblclick')
       await nextTick()
 
       expect(targetCell.classes()).toContain('csv-cell--editing')
@@ -908,7 +908,7 @@ describe('ViewerTable', () => {
         .findAll('.viewer-table__body .viewer-table__row')[0]!
         .findAll('.csv-cell')[1]! // "name" da linha 0 ("Ana")
 
-      await cell.trigger('click')
+      await cell.trigger('dblclick')
       await nextTick()
       const input = cell.find('.csv-cell__input')
       await input.setValue('Alice')
@@ -933,7 +933,7 @@ describe('ViewerTable', () => {
         .findAll('.viewer-table__body .viewer-table__row')[0]!
         .findAll('.csv-cell')[0]! // "id" (number) da linha 0 ("1")
 
-      await cell.trigger('click')
+      await cell.trigger('dblclick')
       await nextTick()
       const input = cell.find('.csv-cell__input')
       await input.setValue('não-numérico')
@@ -953,7 +953,7 @@ describe('ViewerTable', () => {
         .findAll('.viewer-table__body .viewer-table__row')[0]!
         .findAll('.csv-cell')[1]!
 
-      await cell.trigger('click')
+      await cell.trigger('dblclick')
       await nextTick()
       const input = cell.find('.csv-cell__input')
       await input.setValue('rascunho descartado')
@@ -973,7 +973,7 @@ describe('ViewerTable', () => {
         .findAll('.viewer-table__body .viewer-table__row')[0]!
         .findAll('.csv-cell')[1]!
 
-      await cell.trigger('click')
+      await cell.trigger('dblclick')
       await nextTick()
       const input = cell.find('.csv-cell__input')
       await input.setValue('Alice')

@@ -19,10 +19,13 @@ const props = withDefaults(
   defineProps<{
     label?: string
     disabled?: boolean
+    /** Nome acessível do gatilho — necessário quando o slot `trigger` não inclui texto visível (ex.: botão só de ícone). */
+    ariaLabel?: string
   }>(),
   {
     label: '',
     disabled: false,
+    ariaLabel: undefined,
   },
 )
 
@@ -124,6 +127,7 @@ onBeforeUnmount(() => {
       class="dropdown__trigger"
       :disabled="disabled"
       :aria-expanded="open"
+      :aria-label="ariaLabel"
       aria-haspopup="menu"
       @click="toggle"
       @keydown.down.prevent="openMenu"

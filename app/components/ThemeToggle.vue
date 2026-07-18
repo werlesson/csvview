@@ -36,16 +36,18 @@ const label = computed(() =>
         v-if="isDark"
         key="moon"
         class="theme-toggle__icon"
-        viewBox="0 0 16 16"
-        width="16"
-        height="16"
+        viewBox="0 0 24 24"
+        width="17"
+        height="17"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
         aria-hidden="true"
         focusable="false"
       >
-        <path
-          d="M13 9.5A5.5 5.5 0 0 1 6.5 3a5.5 5.5 0 1 0 6.5 6.5Z"
-          fill="currentColor"
-        />
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
       </svg>
       <svg
         v-else
@@ -78,19 +80,19 @@ const label = computed(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  color: var(--text-2);
+  width: 40px;
+  height: 40px;
+  /* Ícone com leve tom de accent (não neutro), fiel ao mock 1a. */
+  color: var(--accent-hover);
   background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 12px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .theme-toggle:hover {
   background: var(--bg-hover);
-  color: var(--text);
   border-color: var(--border-strong);
 }
 

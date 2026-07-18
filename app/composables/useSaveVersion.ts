@@ -1,14 +1,18 @@
 import { ref } from 'vue'
+import { useCellEditing } from '~/composables/useCellEditing'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useFilesStore } from '~/composables/useFilesStore'
 import { stringifyDataset, type Delimiter } from '~/services/csvParser'
+import { nextCopyName } from '~/services/formatFile'
 
 /** Dependências injetáveis do composable (todas com um default de produção). */
 export interface UseSaveVersionOptions {
   /** Dataset atual; default {@link useCurrentDataset}. */
-  currentDataset?: Pick<ReturnType<typeof useCurrentDataset>, 'dataset' | 'meta'>
+  currentDataset?: Pick<ReturnType<typeof useCurrentDataset>, 'dataset' | 'meta' | 'updateMeta'>
   /** Store `files`; default {@link useFilesStore}. */
   filesStore?: Pick<ReturnType<typeof useFilesStore>, 'saveFile' | 'overwriteFile'>
+  /** Histórico de undo/redo; default {@link useCellEditing}. */
+  cellEditing?: Pick<ReturnType<typeof useCellEditing>, 'markSaved'>
 }
 
 /**
@@ -26,8 +30,9 @@ export interface UseSaveVersionOptions {
  * RF-15, CT-03, CT-04, RNF-02); `.spec/features/cell-editing/PLAN.md` (T05).
  */
 export function useSaveVersion(options: UseSaveVersionOptions = {}) {
-  const { dataset, meta } = options.currentDataset ?? useCurrentDataset()
+  const { dataset, meta, updateMeta } = options.currentDataset ?? useCurrentDataset()
   const { saveFile, overwriteFile } = options.filesStore ?? useFilesStore()
+  const { markSaved } = options.cellEditing ?? useCellEditing()
 
   /** `true` enquanto uma escrita (`saveNewVersion`/`overwriteOriginal`) está em voo. */
   const isBusy = ref(false)
@@ -42,11 +47,18 @@ export function useSaveVersion(options: UseSaveVersionOptions = {}) {
   /**
    * Grava um novo registro em `files` com o conteúdo serializado do dataset
    * atual (RF-11) — **nunca** reutiliza `meta.value.id` (RF-12), respeitando
-   * o LRU já implementado em `saveFile`. Não dispara nenhuma exportação para
-   * disco (RF-14). Em falha, retorna `false`, popula `error` e preserva o
-   * dataset/edições em memória (RNF-02).
+   * o LRU já implementado em `saveFile`. O nome vem de `customName` (digitado
+   * pelo usuário no modal de nomeação, `SaveCopyModal`) quando informado —
+   * inclusive repetindo o nome do original, já que `saveFile` não exige nomes
+   * únicos — ou do sufixo "(cópia)" (`nextCopyName`) como default. A
+   * visualização atual passa a apontar para o novo registro (`updateMeta`) —
+   * um "Salvar" (sobrescrever) subsequente afeta a cópia, não o original. Em
+   * sucesso, marca a posição atual como salva (`markSaved`): undo/redo
+   * continuam disponíveis, mas `hasUnsavedChanges` volta a `false`. Não
+   * dispara nenhuma exportação para disco (RF-14). Em falha, retorna `false`,
+   * popula `error` e preserva o dataset/edições em memória (RNF-02).
    */
-  async function saveNewVersion(): Promise<boolean> {
+  async function saveNewVersion(customName?: string): Promise<boolean> {
     error.value = null
 
     if (!dataset.value || !meta.value) {
@@ -57,14 +69,20 @@ export function useSaveVersion(options: UseSaveVersionOptions = {}) {
     isBusy.value = true
     try {
       const content = serializeCurrent()
-      await saveFile({
-        name: meta.value.name,
+      const name = customName?.trim() || nextCopyName(meta.value.name)
+      const sizeBytes = content.length
+      const rowCount = dataset.value.rows.length
+      const columnCount = dataset.value.header.length
+      const id = await saveFile({
+        name,
         delimiter: meta.value.delimiter,
-        size_bytes: content.length,
-        row_count: dataset.value.rows.length,
-        column_count: dataset.value.header.length,
+        size_bytes: sizeBytes,
+        row_count: rowCount,
+        column_count: columnCount,
         content,
       })
+      updateMeta({ id, name, sizeBytes, rowCount, columnCount })
+      markSaved()
       return true
     } catch (cause) {
       console.error('Falha ao salvar nova versão:', cause)
@@ -78,9 +96,10 @@ export function useSaveVersion(options: UseSaveVersionOptions = {}) {
   /**
    * Substitui o `content` do registro original (mesmo `id`) pelo dataset
    * atual serializado (RF-15), sem criar registro adicional. Exige
-   * `meta.value.id` definido (dataset persistido). Em falha — incluindo `id`
-   * ausente ou inexistente em `files` — retorna `false`, popula `error` e
-   * preserva o dataset/edições em memória (RNF-02).
+   * `meta.value.id` definido (dataset persistido). Em sucesso, marca a
+   * posição atual como salva (`markSaved`) — ver {@link saveNewVersion}. Em
+   * falha — incluindo `id` ausente ou inexistente em `files` — retorna
+   * `false`, popula `error` e preserva o dataset/edições em memória (RNF-02).
    */
   async function overwriteOriginal(): Promise<boolean> {
     error.value = null
@@ -90,7 +109,7 @@ export function useSaveVersion(options: UseSaveVersionOptions = {}) {
       return false
     }
     if (meta.value.id === undefined) {
-      error.value = 'Este dataset ainda não foi persistido; use "Salvar nova versão".'
+      error.value = 'Este dataset ainda não foi persistido; use "Salvar como cópia".'
       return false
     }
 
@@ -108,6 +127,7 @@ export function useSaveVersion(options: UseSaveVersionOptions = {}) {
         error.value = 'Arquivo original não encontrado para sobrescrever.'
         return false
       }
+      markSaved()
       return true
     } catch (cause) {
       console.error('Falha ao sobrescrever o arquivo original:', cause)

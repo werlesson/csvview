@@ -130,4 +130,23 @@ describe('useCurrentDataset', () => {
       expect(dataset.value?.rows[0]?.[0]).toBe('1')
     })
   })
+
+  describe('updateMeta', () => {
+    it('mescla os campos informados em meta, preservando os demais', () => {
+      const { setDataset, updateMeta, meta } = useCurrentDataset()
+      const { dataset: d, meta: m } = makeDataset()
+      setDataset(d, m)
+
+      updateMeta({ id: 7, name: 'people (cópia).csv' })
+
+      expect(meta.value).toEqual({ ...m, id: 7, name: 'people (cópia).csv' })
+    })
+
+    it('sem dataset carregado é no-op, sem lançar', () => {
+      const { updateMeta, meta } = useCurrentDataset()
+
+      expect(() => updateMeta({ name: 'x.csv' })).not.toThrow()
+      expect(meta.value).toBeNull()
+    })
+  })
 })

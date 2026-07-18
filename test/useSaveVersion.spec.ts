@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSaveVersion } from '~/composables/useSaveVersion'
+import { useCellEditing } from '~/composables/useCellEditing'
 import {
   useCurrentDataset,
   type Dataset,
@@ -85,6 +86,130 @@ describe('useSaveVersion', () => {
 
       const stored = await filesStore.getFile(originalId)
       expect(stored).toEqual(beforeSave)
+    })
+
+    it('grava o novo registro com o sufixo "(cópia)" no nome, para diferenciar do original', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+      await useSaveVersion().saveNewVersion()
+
+      const files = await filesStore.listFiles()
+      const newRecord = files.find((f) => f.id !== originalId)
+      expect(newRecord?.name).toBe('people (cópia).csv')
+      const original = await filesStore.getFile(originalId)
+      expect(original?.name).toBe('people.csv')
+    })
+
+    it('com customName informado, usa esse nome em vez do sufixo "(cópia)"', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+      await useSaveVersion().saveNewVersion('relatório final.csv')
+
+      const files = await filesStore.listFiles()
+      const newRecord = files.find((f) => f.id !== originalId)
+      expect(newRecord?.name).toBe('relatório final.csv')
+    })
+
+    it('com customName igual ao nome original, cria a cópia com o mesmo nome (sem exigir unicidade)', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+      const ok = await useSaveVersion().saveNewVersion('people.csv')
+
+      expect(ok).toBe(true)
+      const files = await filesStore.listFiles()
+      expect(files).toHaveLength(2)
+      expect(files.filter((f) => f.name === 'people.csv')).toHaveLength(2)
+    })
+
+    it('com customName em branco (só espaços), cai no sufixo "(cópia)" default', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+      await useSaveVersion().saveNewVersion('   ')
+
+      const files = await filesStore.listFiles()
+      const newRecord = files.find((f) => f.id !== originalId)
+      expect(newRecord?.name).toBe('people (cópia).csv')
+    })
+
+    it('atualiza a visualização atual (meta) para apontar ao novo registro — id e nome da cópia', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+
+      await useSaveVersion().saveNewVersion()
+
+      const files = await filesStore.listFiles()
+      const newRecord = files.find((f) => f.id !== originalId)
+      expect(useCurrentDataset().meta.value?.id).toBe(newRecord?.id)
+      expect(useCurrentDataset().meta.value?.name).toBe('people (cópia).csv')
+    })
+
+    it('um "Sobrescrever original" subsequente afeta a cópia recém-salva, não o registro original', async () => {
+      const filesStore = useFilesStore()
+      const originalId = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: originalId, name: 'people.csv' }))
+      const { saveNewVersion, overwriteOriginal } = useSaveVersion()
+      await saveNewVersion()
+
+      useCurrentDataset().updateCell(1, 1, 'Alicia')
+      await overwriteOriginal()
+
+      const files = await filesStore.listFiles()
+      expect(files).toHaveLength(2)
+      const original = files.find((f) => f.id === originalId)!
+      const copy = files.find((f) => f.id !== originalId)!
+      expect(original.content).toBe('id,name\n1,Ana\n2,Bruno\n')
+      expect(copy.content).toContain('Alicia')
     })
 
     it('nunca chama overwriteFile', async () => {
@@ -204,6 +329,64 @@ describe('useSaveVersion', () => {
       expect(ok).toBe(false)
       expect(error.value).not.toBeNull()
       expect(overwriteFile).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('integração com useCellEditing (markSaved)', () => {
+    /** Edita a célula (0,1) via useCellEditing, deixando hasUnsavedChanges/canUndo verdadeiros. */
+    function makeDirty(): void {
+      const { beginEdit, confirmEdit } = useCellEditing()
+      beginEdit(0, 1)
+      confirmEdit('Bruna')
+    }
+
+    it('saveNewVersion bem-sucedido zera hasUnsavedChanges, mas preserva canUndo (undo/redo continuam disponíveis)', async () => {
+      useCurrentDataset().setDataset(makeDataset(), makeMeta())
+      makeDirty()
+      const { hasUnsavedChanges, canUndo } = useCellEditing()
+      expect(hasUnsavedChanges.value).toBe(true)
+
+      await useSaveVersion().saveNewVersion()
+
+      expect(hasUnsavedChanges.value).toBe(false)
+      expect(canUndo.value).toBe(true)
+    })
+
+    it('overwriteOriginal bem-sucedido zera hasUnsavedChanges, mas preserva canUndo', async () => {
+      const filesStore = useFilesStore()
+      const id = await filesStore.saveFile({
+        name: 'people.csv',
+        delimiter: 'comma',
+        size_bytes: 20,
+        row_count: 2,
+        column_count: 2,
+        content: 'id,name\n1,Ana\n2,Bruno\n',
+      })
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id }))
+      makeDirty()
+      const { hasUnsavedChanges, canUndo } = useCellEditing()
+
+      await useSaveVersion().overwriteOriginal()
+
+      expect(hasUnsavedChanges.value).toBe(false)
+      expect(canUndo.value).toBe(true)
+    })
+
+    it('uma gravação que falha não chama markSaved — hasUnsavedChanges continua true', async () => {
+      useCurrentDataset().setDataset(makeDataset(), makeMeta({ id: 1 }))
+      makeDirty()
+      const { hasUnsavedChanges } = useCellEditing()
+
+      const { saveNewVersion } = useSaveVersion({
+        currentDataset: useCurrentDataset(),
+        filesStore: {
+          saveFile: vi.fn().mockRejectedValue(new Error('quota excedida')),
+          overwriteFile: vi.fn(),
+        },
+      })
+      await saveNewVersion()
+
+      expect(hasUnsavedChanges.value).toBe(true)
     })
   })
 })

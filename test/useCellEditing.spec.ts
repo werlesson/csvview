@@ -193,7 +193,7 @@ describe('useCellEditing', () => {
     })
   })
 
-  describe('RF-10: trocar meta.id zera as duas pilhas', () => {
+  describe('RF-10: trocar o dataset (abrir outro arquivo) zera as duas pilhas', () => {
     it('undo/redo/edições anteriores deixam de ser desfazíveis após trocar de dataset', () => {
       const { beginEdit, confirmEdit, undoStack, redoStack, canUndo, canRedo } =
         editingHandles()
@@ -209,6 +209,86 @@ describe('useCellEditing', () => {
       expect(redoStack.value).toHaveLength(0)
       expect(canUndo.value).toBe(false)
       expect(canRedo.value).toBe(false)
+    })
+
+    it('trocar só meta.id (ex.: "Salvar como cópia", via updateMeta) não reseta as pilhas — mesmo dataset em memória', () => {
+      const { beginEdit, confirmEdit, undoStack, canUndo } = editingHandles()
+
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      expect(undoStack.value).toHaveLength(1)
+
+      // "Salvar como cópia" só troca meta.id/name (updateMeta), sem trocar o
+      // objeto dataset — undo/redo continuam disponíveis após salvar.
+      useCurrentDataset().updateMeta({ id: 999, name: 'people (cópia).csv' })
+
+      expect(undoStack.value).toHaveLength(1)
+      expect(canUndo.value).toBe(true)
+    })
+  })
+
+  describe('markSaved/hasUnsavedChanges', () => {
+    it('começa false sem edições', () => {
+      const { hasUnsavedChanges } = editingHandles()
+      expect(hasUnsavedChanges.value).toBe(false)
+    })
+
+    it('fica true após uma edição confirmada', () => {
+      const { beginEdit, confirmEdit, hasUnsavedChanges } = editingHandles()
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      expect(hasUnsavedChanges.value).toBe(true)
+    })
+
+    it('markSaved volta a false na posição atual, sem afetar canUndo/canRedo', () => {
+      const { beginEdit, confirmEdit, markSaved, hasUnsavedChanges, canUndo, canRedo } =
+        editingHandles()
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+
+      markSaved()
+
+      expect(hasUnsavedChanges.value).toBe(false)
+      expect(canUndo.value).toBe(true)
+      expect(canRedo.value).toBe(false)
+    })
+
+    it('desfazer depois de salvar fica true; refazer de volta à posição salva fica false de novo', () => {
+      const { beginEdit, confirmEdit, undo, redo, markSaved, hasUnsavedChanges } =
+        editingHandles()
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      markSaved()
+
+      undo()
+      expect(hasUnsavedChanges.value).toBe(true)
+
+      redo()
+      expect(hasUnsavedChanges.value).toBe(false)
+    })
+
+    it('uma nova edição após markSaved fica true de novo', () => {
+      const { beginEdit, confirmEdit, markSaved, hasUnsavedChanges } = editingHandles()
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      markSaved()
+
+      beginEdit(1, 1)
+      confirmEdit('Bruna')
+
+      expect(hasUnsavedChanges.value).toBe(true)
+    })
+
+    it('trocar de dataset reseta a posição salva junto com as pilhas', () => {
+      const { beginEdit, confirmEdit, markSaved, hasUnsavedChanges } = editingHandles()
+      beginEdit(0, 1)
+      confirmEdit('Alice')
+      markSaved()
+      expect(hasUnsavedChanges.value).toBe(false)
+
+      loadDataset()
+
+      expect(hasUnsavedChanges.value).toBe(false)
     })
   })
 })

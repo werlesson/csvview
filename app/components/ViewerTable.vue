@@ -634,7 +634,7 @@ function onEditCancel(): void {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--bg-2);
+  background: var(--bg-1);
 }
 
 /* Cabeçalho e linhas são tabelas de largura fixa, para alinhar as colunas.
@@ -809,9 +809,12 @@ function onEditCancel(): void {
   }
 }
 
-/* Hover de linha: realça a linha inteira sob o cursor (fiel ao design). */
+/* Hover de linha: realça a linha inteira sob o cursor (fiel ao design).
+   --bg-2 (não --bg-hover): a linha repousa em --bg-1 (.viewer-table), e
+   --bg-hover é calibrado para reusar de --bg-2 — usá-lo aqui escureceria a
+   linha no hover em vez de acender (mesmo ajuste de RecentFiles.vue). */
 .viewer-table__body .viewer-table__row:hover :deep(.csv-cell) {
-  background: var(--bg-hover);
+  background: var(--bg-2);
 }
 
 .viewer-table__th-button {

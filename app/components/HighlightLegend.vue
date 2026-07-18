@@ -36,7 +36,7 @@
   justify-content: flex-end;
   gap: 20px;
   padding: 10px 12px;
-  background: var(--bg-2);
+  background: var(--border);
   border-bottom: 1px solid var(--border);
 }
 
@@ -60,9 +60,9 @@
   background-image: repeating-linear-gradient(
     45deg,
     var(--border) 0,
-    var(--border) 3px,
-    var(--bg-2) 3px,
-    var(--bg-2) 6px
+    var(--border) 2px,
+    var(--bg-1) 2px,
+    var(--bg-1) 8px
   );
   border: 1px solid var(--border);
 }

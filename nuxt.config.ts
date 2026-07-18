@@ -32,5 +32,14 @@ export default defineNuxtConfig({
 
   vite: {
     plugins: [tailwindcss()],
+    // WSL2: o cliente HMR não descobre a porta certa sozinho e cai para o
+    // fallback 5173, que não existe aqui — fixa host/porta em localhost:3000.
+    server: {
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost',
+        port: 3000,
+      },
+    },
   },
 })

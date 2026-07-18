@@ -52,6 +52,16 @@ export function useCurrentDataset() {
   }
 
   /**
+   * Mescla campos em `meta` sem trocar o dataset (ex.: "Salvar como cópia"
+   * passa a apontar a visualização atual para o novo registro — RF-11/RF-12).
+   * No-op sem dataset carregado.
+   */
+  function updateMeta(patch: Partial<DatasetMeta>): void {
+    if (!meta.value) return
+    meta.value = { ...meta.value, ...patch }
+  }
+
+  /**
    * Muta `dataset.value.rows[rowIndex][columnIndex]` in-place (CT-01). Sem
    * dataset carregado ou com índices fora dos limites, é um no-op silencioso
    * — nunca lança.
@@ -71,5 +81,6 @@ export function useCurrentDataset() {
     setDataset,
     clearDataset,
     updateCell,
+    updateMeta,
   }
 }

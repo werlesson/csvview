@@ -9,6 +9,7 @@ import {
 } from '~/composables/useCurrentDataset'
 import { useFilesStore } from '~/composables/useFilesStore'
 import { deleteDatabase } from '~/composables/useDatabase'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
 
 /** Dataset de exemplo: id (number), status (text), amount (number). */
 function makeDataset(): Dataset {
@@ -217,6 +218,10 @@ describe('viewer.vue — fiação da exportação (T06)', () => {
 describe('viewer.vue — entrada "Comparar" (file-comparison, T07)', () => {
   beforeEach(() => {
     useCurrentDataset().clearDataset()
+    // happy-dom mede o scroller do ViewerTable com offsetHeight 0 — sem o stub
+    // o virtualizador não renderiza nenhuma linha do corpo (ver MEMORY
+    // viewertable-virtualizer-no-body-rows-jsdom).
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
   })
 
   afterEach(() => {
@@ -240,6 +245,30 @@ describe('viewer.vue — entrada "Comparar" (file-comparison, T07)', () => {
     expect(wrapper.find('.export-overlay').exists()).toBe(false)
     expect(wrapper.find('.filter-overlay').exists()).toBe(false)
     expect(wrapper.text()).toContain('4 linhas')
+  })
+
+  it('com edição pendente, @open-compare aciona o guard de alterações não salvas em vez de navegar direto', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+
+    const cell = wrapper.findAll('.viewer-table__body .viewer-table__row')[0]!.findAll('.csv-cell')[1]!
+    await cell.trigger('dblclick')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('pending')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    const navigateToSpy = vi
+      .spyOn(globalThis as unknown as { navigateTo: (path: string) => void }, 'navigateTo')
+      .mockImplementation(() => {})
+
+    await wrapper.get('.toolbar__compare').trigger('click')
+
+    expect(navigateToSpy).not.toHaveBeenCalled()
+    expect(useUnsavedChangesGuard().isOpen.value).toBe(true)
+    useUnsavedChangesGuard().cancel()
   })
 })
 
@@ -560,7 +589,7 @@ describe('viewer.vue — fiação da edição de célula (cell-editing, T09)', (
     const cell = bodyRows[0]!.findAll('.csv-cell')[1]! // coluna "status" da linha 0 ("settled")
 
     // Editar → confirmar (RF-01/RF-02/RF-05).
-    await cell.trigger('click')
+    await cell.trigger('dblclick')
     await nextTick()
     const input = cell.find('.csv-cell__input')
     await input.setValue('pending')
@@ -569,42 +598,204 @@ describe('viewer.vue — fiação da edição de célula (cell-editing, T09)', (
     await nextTick()
 
     expect(cell.text()).toContain('pending')
-    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').attributes('disabled')).toBeDefined()
 
     // Desfazer (RF-06), acionado pela toolbar.
-    await wrapper.get('button[aria-label="Desfazer"]').trigger('click')
+    await wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').trigger('click')
     await nextTick()
 
     expect(cell.text()).toContain('settled')
-    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').attributes('disabled')).toBeUndefined()
 
     // Refazer (RF-07), acionado pela toolbar.
-    await wrapper.get('button[aria-label="Refazer"]').trigger('click')
+    await wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').trigger('click')
     await nextTick()
 
     expect(cell.text()).toContain('pending')
 
-    // "Salvar nova versão" (RF-11/RF-12): cria um novo registro, preserva o original.
+    // "Salvar como cópia" (RF-11/RF-12): abre o modal de nomeação; só cria o
+    // novo registro (preservando o original) ao confirmar, com o nome sugerido.
     await wrapper.get('.toolbar__save-version').trigger('click')
+    await nextTick()
+    expect(wrapper.find('.save-copy-overlay').exists()).toBe(true)
+    await wrapper.get('.save-copy-overlay__confirm').trigger('click')
     await flushPromises()
+    await nextTick()
 
     const filesAfterSave = await filesStore.listFiles()
     expect(filesAfterSave).toHaveLength(2)
-    const newRecord = filesAfterSave.find((f) => f.id !== fileId)
-    expect(newRecord?.content).toContain('pending')
+    const newRecord = filesAfterSave.find((f) => f.id !== fileId)!
+    expect(newRecord.content).toContain('pending')
+    expect(newRecord.name).toBe('transactions (cópia).csv')
     const original = await filesStore.getFile(fileId)
     expect(original?.content).toBe(CONTENT)
 
-    // "Sobrescrever original" (RF-15): substitui o content do mesmo id, sem novo registro.
+    // A visualização passa a apontar para a cópia recém-salva: sem edição
+    // pendente em relação a ela, "Salvar" (sobrescrever) fica desabilitado.
+    expect(useCurrentDataset().meta.value?.id).toBe(newRecord.id)
+    expect(useCurrentDataset().meta.value?.name).toBe('transactions (cópia).csv')
+    expect(wrapper.get('.toolbar__overwrite').attributes('disabled')).toBeDefined()
+
+    // Uma nova edição reabilita "Salvar" — e, como a visualização agora aponta
+    // para a cópia, sobrescrever afeta a cópia, nunca o registro original (RF-15).
+    await cell.trigger('dblclick')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('confirmed')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
     await wrapper.get('.toolbar__overwrite').trigger('click')
+    await nextTick()
+    expect(wrapper.find('.confirm-overlay').exists()).toBe(true)
+    await wrapper.get('.confirm-overlay__confirm').trigger('click')
     await flushPromises()
 
     const filesAfterOverwrite = await filesStore.listFiles()
     expect(filesAfterOverwrite).toHaveLength(2)
-    const overwritten = await filesStore.getFile(fileId)
-    expect(overwritten?.content).toContain('pending')
+    const untouchedOriginal = await filesStore.getFile(fileId)
+    expect(untouchedOriginal?.content).toBe(CONTENT)
+    const overwrittenCopy = await filesStore.getFile(newRecord.id)
+    expect(overwrittenCopy?.content).toContain('confirmed')
+  })
+
+  describe('atalhos de teclado globais (Ctrl/Cmd+Z, Ctrl/Cmd+R, Ctrl/Cmd+S)', () => {
+    async function editFirstCell(
+      wrapper: Awaited<ReturnType<typeof mountPersistedViewer>>['wrapper'],
+      value: string,
+    ): Promise<void> {
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+      await cell.trigger('dblclick')
+      await nextTick()
+      await cell.find('.csv-cell__input').setValue(value)
+      await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+      await nextTick()
+      await nextTick()
+    }
+
+    function pressGlobal(key: string): void {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, ctrlKey: true, cancelable: true }))
+    }
+
+    it('Ctrl+Z desfaz a edição confirmada mais recente', async () => {
+      const { wrapper } = await mountPersistedViewer()
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+      await editFirstCell(wrapper, 'pending')
+      expect(cell.text()).toContain('pending')
+
+      pressGlobal('z')
+      await nextTick()
+
+      expect(cell.text()).toContain('settled')
+    })
+
+    it('Ctrl+R refaz a edição desfeita mais recente', async () => {
+      const { wrapper } = await mountPersistedViewer()
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+      await editFirstCell(wrapper, 'pending')
+      pressGlobal('z')
+      await nextTick()
+      expect(cell.text()).toContain('settled')
+
+      pressGlobal('r')
+      await nextTick()
+
+      expect(cell.text()).toContain('pending')
+    })
+
+    it('Ctrl+S abre o modal de confirmação de sobrescrita, sem sobrescrever direto', async () => {
+      const { wrapper } = await mountPersistedViewer()
+      await editFirstCell(wrapper, 'pending')
+
+      expect(wrapper.find('.confirm-overlay').exists()).toBe(false)
+      pressGlobal('s')
+      await nextTick()
+
+      expect(wrapper.find('.confirm-overlay').exists()).toBe(true)
+    })
+
+    it('Ctrl+S é inerte sem alteração pendente (nenhuma edição desde o carregamento)', async () => {
+      const { wrapper } = await mountPersistedViewer()
+
+      pressGlobal('s')
+      await nextTick()
+
+      expect(wrapper.find('.confirm-overlay').exists()).toBe(false)
+    })
+
+    it('os atalhos são ignorados enquanto o foco está no input de edição de uma célula (não atropela a digitação/undo nativo)', async () => {
+      const { wrapper } = await mountPersistedViewer()
+      const cell = wrapper
+        .findAll('.viewer-table__body .viewer-table__row')[0]!
+        .findAll('.csv-cell')[1]!
+      await cell.trigger('dblclick')
+      await nextTick()
+      const input = cell.find('.csv-cell__input')
+      await input.setValue('pending')
+
+      input.element.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }),
+      )
+      await nextTick()
+
+      expect(wrapper.find('.confirm-overlay').exists()).toBe(false)
+      // A edição segue em rascunho, não confirmada — Ctrl+S não a validou nem fechou o input.
+      expect(cell.find('.csv-cell__input').exists()).toBe(true)
+    })
+  })
+})
+
+describe('viewer.vue — guard nativo de recarregar/fechar aba (beforeunload)', () => {
+  beforeEach(() => {
+    useCurrentDataset().clearDataset()
+    // happy-dom mede o scroller do ViewerTable com offsetHeight 0 — sem o stub
+    // o virtualizador não renderiza nenhuma linha do corpo (ver MEMORY
+    // viewertable-virtualizer-no-body-rows-jsdom).
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(400)
+  })
+
+  afterEach(() => {
+    useCurrentDataset().clearDataset()
+    document.body.innerHTML = ''
+    vi.restoreAllMocks()
+  })
+
+  it('sem edição pendente, beforeunload não é interceptado', async () => {
+    await mountViewer()
+
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('com edição pendente, beforeunload é interceptado (preventDefault + returnValue)', async () => {
+    const wrapper = await mountViewer()
+    await nextTick()
+    await nextTick()
+    const cell = wrapper
+      .findAll('.viewer-table__body .viewer-table__row')[0]!
+      .findAll('.csv-cell')[1]!
+    await cell.trigger('dblclick')
+    await nextTick()
+    await cell.find('.csv-cell__input').setValue('pending')
+    await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
+    await nextTick()
+    await nextTick()
+
+    const event = new Event('beforeunload', { cancelable: true }) as BeforeUnloadEvent
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(event.returnValue).toBe('')
   })
 })
 
@@ -644,7 +835,7 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     // Edita a coluna "status" da primeira linha filtrada (id=2, "failed" → "settled"),
     // deixando de satisfazer o filtro "status igual a failed".
     const cell = bodyRows[0]!.findAll('.csv-cell')[1]!
-    await cell.trigger('click')
+    await cell.trigger('dblclick')
     await nextTick()
     await cell.find('.csv-cell__input').setValue('settled')
     await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
@@ -678,7 +869,7 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
 
     // Edita a linha de amount=10 (posição 1, id=4) para 5000 — passa a ser a maior.
     const cell = bodyRows[1]!.findAll('.csv-cell')[2]!
-    await cell.trigger('click')
+    await cell.trigger('dblclick')
     await nextTick()
     await cell.find('.csv-cell__input').setValue('5000')
     await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
@@ -726,7 +917,7 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     // Edita e confirma uma célula do dataset A — registra 1 entrada desfazível e marca "sujo".
     const bodyRows = wrapper.findAll('.viewer-table__body .viewer-table__row')
     const cell = bodyRows[0]!.findAll('.csv-cell')[1]!
-    await cell.trigger('click')
+    await cell.trigger('dblclick')
     await nextTick()
     await cell.find('.csv-cell__input').setValue('pending')
     await cell.find('.csv-cell__input').trigger('keydown', { key: 'Enter' })
@@ -734,7 +925,7 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     await nextTick()
 
     expect(cell.find('.csv-cell__dirty-indicator').exists()).toBe(true)
-    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeUndefined()
 
     // Reabre um dataset diferente (novo `id`) — simula reabrir outro arquivo no Viewer.
     const OTHER_CONTENT = 'x,y\n1,2\n3,4'
@@ -761,9 +952,10 @@ describe('viewer.vue — testes de integração cross-cutting (cell-editing, T10
     await nextTick()
     await nextTick()
 
-    // Undo/redo inertes e nenhuma célula "suja" sobrevive à troca de dataset (RF-10).
-    expect(wrapper.get('button[aria-label="Desfazer"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('button[aria-label="Refazer"]').attributes('disabled')).toBeDefined()
+    // Undo/redo inertes (botões seguem visíveis, porém desabilitados) e nenhuma
+    // célula "suja" sobrevive à troca de dataset (RF-10).
+    expect(wrapper.get('button[aria-label="Desfazer (Ctrl+Z)"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button[aria-label="Refazer (Ctrl+R)"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('.csv-cell__dirty-indicator').exists()).toBe(false)
   })
 })

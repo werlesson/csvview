@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import ViewerToolbar from '~/components/ViewerToolbar.vue'
 import ViewerTable from '~/components/ViewerTable.vue'
 import StatsPanel from '~/components/StatsPanel.vue'
 import FilterPanel from '~/components/FilterPanel.vue'
 import FilterChips from '~/components/FilterChips.vue'
 import ExportModal from '~/components/ExportModal.vue'
+import ConfirmModal from '~/components/ConfirmModal.vue'
+import SaveCopyModal from '~/components/SaveCopyModal.vue'
 import { useCurrentDataset } from '~/composables/useCurrentDataset'
 import { useViewer } from '~/composables/useViewer'
 import { useCellEditing } from '~/composables/useCellEditing'
 import { useSaveVersion } from '~/composables/useSaveVersion'
 import { useViewerSession } from '~/composables/useViewerSession'
+import { useUnsavedChangesGuard } from '~/composables/useUnsavedChangesGuard'
+import { nextCopyName } from '~/services/formatFile'
 
 /**
  * Tela do **Viewer** (Fase 7).
@@ -79,8 +83,9 @@ const selectedLabel = computed(() => selectedColumn.value?.label ?? null)
  * T09) — nenhum estado de edição próprio na página, só a fiação entre os
  * composables e `ViewerToolbar` (undo/redo/salvar/sobrescrever).
  */
-const { canUndo, canRedo, undo, redo } = useCellEditing()
-const { error: saveError, saveNewVersion, overwriteOriginal } = useSaveVersion()
+const { canUndo, canRedo, hasUnsavedChanges, undo, redo } = useCellEditing()
+const { isBusy: isSaving, error: saveError, saveNewVersion, overwriteOriginal } = useSaveVersion()
+const { guardNavigation } = useUnsavedChangesGuard()
 
 function onUndo(): void {
   undo()
@@ -90,13 +95,84 @@ function onRedo(): void {
   redo()
 }
 
+/**
+ * Confirmação de "Salvar como cópia": o clique no toolbar só abre o modal de
+ * nomeação (`SaveCopyModal`) — a chamada real a `saveNewVersion(name)` só
+ * acontece se o usuário confirmar, com o nome (editável, sugerido por
+ * `nextCopyName`) escolhido lá.
+ */
+const showSaveVersionConfirm = ref(false)
+const suggestedCopyName = computed(() => nextCopyName(meta.value?.name ?? ''))
+
 function onSaveNewVersion(): void {
-  void saveNewVersion()
+  showSaveVersionConfirm.value = true
 }
 
-function onOverwriteOriginal(): void {
-  void overwriteOriginal()
+async function onConfirmSaveVersion(name: string): Promise<void> {
+  await saveNewVersion(name)
+  showSaveVersionConfirm.value = false
 }
+
+/** Confirmação da sobrescrita (RF-15): o clique no toolbar só abre o modal — a chamada real a `overwriteOriginal()` só acontece se o usuário confirmar. */
+const showOverwriteConfirm = ref(false)
+
+/** Sem alteração pendente desde o último save (`hasUnsavedChanges` falso), não há o que salvar — cobre tanto o clique no botão quanto o atalho Ctrl+S. */
+function onOverwriteOriginal(): void {
+  if (!hasUnsavedChanges.value) return
+  showOverwriteConfirm.value = true
+}
+
+async function onConfirmOverwrite(): Promise<void> {
+  await overwriteOriginal()
+  showOverwriteConfirm.value = false
+}
+
+/**
+ * Atalhos de teclado globais: Ctrl/Cmd+Z desfaz, Ctrl/Cmd+R refaz,
+ * Ctrl/Cmd+S abre a confirmação de sobrescrita (mesmo caminho do clique no
+ * botão "Sobrescrever original" — nunca sobrescreve direto). Ignorados
+ * enquanto o foco está num campo de texto (input/textarea), para não atropelar
+ * a digitação (ex.: rascunho de uma célula em edição) nem o undo nativo dela.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+}
+
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (!(event.ctrlKey || event.metaKey) || isTypingTarget(event.target)) return
+
+  const key = event.key.toLowerCase()
+  if (key === 'z') {
+    event.preventDefault()
+    onUndo()
+  } else if (key === 'r') {
+    event.preventDefault()
+    onRedo()
+  } else if (key === 's') {
+    event.preventDefault()
+    onOverwriteOriginal()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
+
+/**
+ * Recarregar/fechar a aba com alteração pendente (`hasUnsavedChanges`):
+ * dispara o diálogo nativo do navegador (texto genérico, sem opção de salvar
+ * — não há UI customizável nesse caso). A navegação interna (logo/"Voltar",
+ * "Comparar") usa o modal customizado de `useUnsavedChangesGuard`, via
+ * `guardNavigation`.
+ */
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedChanges.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => window.addEventListener('beforeunload', onBeforeUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', onBeforeUnload))
 
 /** Visibilidade do painel de filtros (UI-01) — nenhuma persistência (RF-07). */
 const showFilters = ref(false)
@@ -112,9 +188,12 @@ function onOpenExport(): void {
   showExport.value = true
 }
 
-/** Navega para a tela de comparação (RF-02, T07) — nenhuma outra mudança de estado do Viewer. */
+/**
+ * Navega para a tela de comparação (RF-02, T07) — passa pelo guard de
+ * alterações não salvas (mesmo modal do "Voltar"/logo em `default.vue`).
+ */
 function onOpenCompare(): void {
-  navigateTo('/compare')
+  guardNavigation('/compare')
 }
 
 /** Só os filtros que restringem linhas (não-inertes) acionam a mensagem/ação de "limpar filtros" no estado vazio. */
@@ -130,6 +209,7 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       :active-filter-count="activeFilterCount"
       :can-undo="canUndo"
       :can-redo="canRedo"
+      :has-unsaved-changes="hasUnsavedChanges"
       :save-error="saveError"
       @toggle-column="toggleColumn"
       @toggle-pin="togglePin"
@@ -159,6 +239,26 @@ const hasActiveFilters = computed(() => activeFilters.value.length > 0)
       :display-columns="displayColumns"
       :file-name="meta?.name ?? ''"
       @close="showExport = false"
+    />
+
+    <SaveCopyModal
+      :open="showSaveVersionConfirm"
+      :file-name="meta?.name ?? ''"
+      :suggested-name="suggestedCopyName"
+      :busy="isSaving"
+      @confirm="onConfirmSaveVersion"
+      @close="showSaveVersionConfirm = false"
+    />
+
+    <ConfirmModal
+      :open="showOverwriteConfirm"
+      title="Salvar?"
+      :message="`Isso substituirá permanentemente o conteúdo de “${meta?.name ?? ''}”. As edições não salvas como cópia serão perdidas do arquivo original — esta ação não pode ser desfeita.`"
+      confirm-label="Salvar"
+      danger
+      :busy="isSaving"
+      @confirm="onConfirmOverwrite"
+      @close="showOverwriteConfirm = false"
     />
 
     <div class="viewer__body">

@@ -218,8 +218,8 @@ watch(
 .compare-selector-overlay__error {
   margin: 0;
   padding: 10px 12px;
-  background: var(--danger-soft, rgba(239, 68, 68, 0.12));
-  border: 1px solid var(--danger, #ef4444);
+  background: var(--error-soft);
+  border: 1px solid var(--error);
   border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 13px;

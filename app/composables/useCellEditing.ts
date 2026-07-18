@@ -51,20 +51,29 @@ const editingCell = ref<EditingCell | null>(null)
 const validationError = ref<string | null>(null)
 const undoStack = ref<CellEditEntry[]>([])
 const redoStack = ref<CellEditEntry[]>([])
+/**
+ * `undoStack.length` no momento do último `markSaved()` — a "posição salva"
+ * na linha do tempo de undo/redo. Ver {@link hasUnsavedChanges}.
+ */
+const savedPosition = ref(0)
 
 /**
- * Reseta as pilhas e o estado de edição em andamento sempre que o `id` do
- * dataset carregado muda (RF-10, CT-02) — inclusive ao abrir um dataset sem
- * `id` (upload ainda não persistido) após um outro já identificado.
- * `flush: 'sync'` evita qualquer espera perceptível (RNF-01).
+ * Reseta as pilhas e o estado de edição em andamento sempre que o objeto
+ * `dataset` é trocado por um novo — abrir/reabrir um arquivo (RF-10, CT-02),
+ * inclusive o mesmo arquivo, sempre reparseia e chama `setDataset` com uma
+ * instância nova. Propositalmente **não** observa `meta.value.id`: "Salvar
+ * como cópia" muda o `id` via `updateMeta` sem trocar o `dataset` (mesmas
+ * linhas em memória) — undo/redo continuam disponíveis normalmente depois de
+ * salvar. `flush: 'sync'` evita qualquer espera perceptível (RNF-01).
  */
 watch(
-  () => useCurrentDataset().meta.value?.id,
+  () => useCurrentDataset().dataset.value,
   () => {
     editingCell.value = null
     validationError.value = null
     undoStack.value = []
     redoStack.value = []
+    savedPosition.value = 0
   },
   { flush: 'sync' },
 )
@@ -177,6 +186,15 @@ export function useCellEditing() {
     )
   }
 
+  /**
+   * Marca a posição atual da linha do tempo de undo/redo (`undoStack.length`)
+   * como salva — chamado por `useSaveVersion` após "Salvar como cópia"/
+   * "Sobrescrever original" bem-sucedidos. Ver {@link hasUnsavedChanges}.
+   */
+  function markSaved(): void {
+    savedPosition.value = undoStack.value.length
+  }
+
   return {
     dataset,
     meta,
@@ -186,11 +204,20 @@ export function useCellEditing() {
     redoStack: computed(() => redoStack.value),
     canUndo: computed(() => undoStack.value.length > 0),
     canRedo: computed(() => redoStack.value.length > 0),
+    /**
+     * `true` quando a posição atual (`undoStack.length`) diverge da última
+     * `markSaved()` — independente de `canUndo`/`canRedo`, que refletem só a
+     * existência de histórico (não se ele já foi salvo). Ex.: editar → salvar
+     * → desfazer → refazer volta a `false` (mesma posição salva); editar duas
+     * vezes → salvar → desfazer uma vez fica `true` (posição diverge).
+     */
+    hasUnsavedChanges: computed(() => undoStack.value.length !== savedPosition.value),
     beginEdit,
     confirmEdit,
     cancelEdit,
     undo,
     redo,
     isDirty,
+    markSaved,
   }
 }

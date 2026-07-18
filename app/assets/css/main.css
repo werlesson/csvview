@@ -9,15 +9,20 @@
 
 :root,
 [data-theme="dark"] {
-  /* Fundos e superfícies */
-  --bg: #08080a;
-  --bg-1: #0f0f12;
-  --bg-2: #161619;
-  --bg-hover: #1d1d22;
+  /* Fundos e superfícies — escada crescente de luminância (bg < bg-1 < bg-2
+     < bg-hover). --bg-hover é reusado por botões/dropdowns/toggles que
+     repousam em --bg-2 (RF-08 etc.) — precisa ficar mais claro que --bg-2
+     para o hover continuar "acendendo" em vez de escurecer. O hover mais
+     sutil dos cards de recentes (mock 1a) usa --bg-2 diretamente, não este
+     token (ver RecentFiles.vue `.recent:hover`). */
+  --bg: #0a0a0e;
+  --bg-1: #101017;
+  --bg-2: #201935;
+  --bg-hover: #4d475d;
 
   /* Bordas */
-  --border: #232329;
-  --border-strong: #31313a;
+  --border: #22222c;
+  --border-strong: #3a3a48;
 
   /* Texto */
   --text: #eaeaee;
@@ -42,6 +47,9 @@
 
   /* Sombra */
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+
+  /* Glow (radial atrás do header/dropzone) */
+  --glow: #1f1835;
 }
 
 [data-theme="light"] {
@@ -78,6 +86,9 @@
 
   /* Sombra */
   --shadow: 0 8px 30px rgba(20, 20, 40, 0.12);
+
+  /* Glow (radial atrás do header/dropzone) */
+  --glow: var(--accent-soft);
 }
 
 /* Raios (2–14 para chips/inputs/botões/cards; 20 para pílulas/superfícies grandes) */

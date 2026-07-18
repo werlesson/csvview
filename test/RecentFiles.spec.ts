@@ -110,6 +110,74 @@ describe('RecentFiles', () => {
     expect(wrapper.text()).toContain('Nenhum arquivo recente')
   })
 
+  it('mostra o contador de arquivos junto ao título', () => {
+    const wrapper = mount(RecentFiles, {
+      props: { files: [makeRecord({ id: 1 }), makeRecord({ id: 2, name: 'b.csv' })] },
+    })
+
+    expect(wrapper.get('.recents__count').text()).toBe('2 arquivos')
+  })
+
+  it('usa o singular "arquivo" quando há só um recente', () => {
+    const wrapper = mount(RecentFiles, { props: { files: [makeRecord()] } })
+
+    expect(wrapper.get('.recents__count').text()).toBe('1 arquivo')
+  })
+
+  it('não mostra contador nem busca quando não há recentes', () => {
+    const wrapper = mount(RecentFiles, { props: { files: [] } })
+
+    expect(wrapper.find('.recents__count').exists()).toBe(false)
+    expect(wrapper.find('.recents__search').exists()).toBe(false)
+  })
+
+  it('mostra as tags de coluna derivadas do cabeçalho, com "+N" de overflow', () => {
+    const wrapper = mount(RecentFiles, {
+      props: {
+        files: [
+          makeRecord({ content: 'imovel,bairro,valor,area,quartos,vagas,tipo,cidade\n1,Centro,100,50,2,1,casa,SP' }),
+        ],
+      },
+    })
+
+    const tags = wrapper.findAll('.recent__tag').map((t) => t.text())
+    expect(tags).toEqual(['imovel', 'bairro', 'valor', '+5'])
+  })
+
+  it('não mostra a linha de tags quando o cabeçalho não pode ser derivado', () => {
+    const wrapper = mount(RecentFiles, { props: { files: [makeRecord({ content: '' })] } })
+
+    expect(wrapper.find('.recent__tags').exists()).toBe(false)
+  })
+
+  it('filtra os recentes pelo nome ao digitar na busca', async () => {
+    const wrapper = mount(RecentFiles, {
+      props: {
+        files: [
+          makeRecord({ id: 1, name: 'teste.csv' }),
+          makeRecord({ id: 2, name: 'vendas_2025.csv' }),
+        ],
+      },
+    })
+
+    const input = wrapper.get('.recents__search input')
+    await input.setValue('vendas')
+
+    const names = wrapper.findAll('.recent__name').map((n) => n.text())
+    expect(names).toEqual(['vendas_2025.csv'])
+  })
+
+  it('mostra "nenhum arquivo encontrado" quando a busca não corresponde a nenhum recente', async () => {
+    const wrapper = mount(RecentFiles, {
+      props: { files: [makeRecord({ name: 'teste.csv' })] },
+    })
+
+    await wrapper.get('.recents__search input').setValue('zzz')
+
+    expect(wrapper.find('.recents__list').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Nenhum arquivo encontrado')
+  })
+
   it('usa a mesma classe única recent__icon, sem variação por índice (RF-05)', () => {
     const wrapper = mount(RecentFiles, {
       props: {

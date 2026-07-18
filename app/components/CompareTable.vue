@@ -183,7 +183,7 @@ const isEmpty = computed(() => props.noResults ?? props.records.length === 0)
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--bg-2);
+  background: var(--bg-1);
 }
 
 .compare-table__head .compare-table__row,

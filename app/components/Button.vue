@@ -120,7 +120,7 @@ const classes = computed(() => [
 /* Danger — erro sólido */
 .btn--danger {
   background: var(--error);
-  color: #ffffff;
+  color: var(--accent-fg);
   border-color: var(--error);
 }
 
